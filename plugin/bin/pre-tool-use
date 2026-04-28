@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# bin/pre-tool-use — PreToolUse hook. Forwards a compact "wants to run X"
+# event so joiners can see what Claude is about to do.
+#
+# Fail-open.
+
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+
+input="$(cat)"
+[[ -z "$COLLAB_CLAW" ]] && exit 0
+printf '%s' "$input" | $COLLAB_CLAW post-tool pre 2>/dev/null || true
+exit 0

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# bin/host — invoked by the /collab-claw:host skill via Bash.
+# Forwards to `collab-claw host`.
+
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+
+if [[ -z "$COLLAB_CLAW" ]]; then
+  cat <<EOF
+[collab-claw] Could not find the collab-claw CLI on this machine.
+
+The host plugin needs the CLI to start the relay. Install it with:
+
+  npm install -g collab-claw
+
+Or, if you cloned the repo, ensure ./bin/collab-claw is executable.
+EOF
+  exit 1
+fi
+
+exec $COLLAB_CLAW host "$@"

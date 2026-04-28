@@ -1,0 +1,16 @@
+{
+  "name": "collab-claw",
+  "owner": {
+    "name": "collab-claw"
+  },
+  "metadata": {
+    "description": "Pair-program with one Claude across multiple laptops. Host opens a room, teammates join from their own terminals via the collab-claw CLI, and prompts/responses are mirrored to everyone in real time."
+  },
+  "plugins": [
+    {
+      "name": "collab-claw",
+      "source": "./plugin",
+      "description": "Host-side plugin. Run `/collab-claw:host` in a Claude Code session to open a room. Joiners use the standalone `collab-claw` CLI (npm install -g collab-claw or git clone) — they don't need this plugin."
+    }
+  ]
+}

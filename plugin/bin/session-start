@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# bin/session-start — SessionStart hook.
+# Currently a no-op (the always-on monitor handles wakeup). We keep this
+# wired so future versions can print a banner like "[collab-claw] hosting"
+# without re-architecting hooks.json.
+
+set -uo pipefail
+exit 0

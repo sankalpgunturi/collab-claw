@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+[[ -z "$COLLAB_CLAW" ]] && { echo "[collab-claw] CLI not found"; exit 1; }
+exec $COLLAB_CLAW status "$@"

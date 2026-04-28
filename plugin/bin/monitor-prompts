@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# bin/monitor-prompts — entry point for the always-on plugin monitor.
+#
+# Spike B finding (collab-claw): `when: always` is the only trigger that
+# actually starts a monitor process in Claude Code 2.1.119. The monitor
+# self-gates with ~/.collab-claw/session.json so it's a no-op until the
+# user runs /collab-claw:host.
+#
+# All the actual SSE/gate logic lives in `collab-claw monitor`.
+
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+
+if [[ -z "$COLLAB_CLAW" ]]; then
+  # If we can't find the CLI we just idle quietly. Don't crash the host.
+  exec sleep 86400
+fi
+
+exec $COLLAB_CLAW monitor

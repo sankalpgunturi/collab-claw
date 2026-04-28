@@ -1,0 +1,14 @@
+#!/usr/bin/env node
+// collab-claw — entrypoint. Forwards to src/cli.mjs.
+
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { spawn } from 'node:child_process';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const cliPath = resolve(here, '..', 'src', 'cli.mjs');
+
+import(cliPath).then(m => m.main(process.argv.slice(2))).catch(err => {
+  console.error('collab-claw: fatal:', err && err.stack || err);
+  process.exit(1);
+});

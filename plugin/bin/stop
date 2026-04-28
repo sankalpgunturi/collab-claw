@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# bin/stop — Stop hook. Reads { transcript_path, ... } JSON from stdin,
+# extracts the last assistant message from the JSONL transcript, and POSTs
+# it to the relay's /events endpoint as a `response` event. Joiners see it
+# on /transcript-stream.
+#
+# Fail-open.
+
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+
+input="$(cat)"
+[[ -z "$COLLAB_CLAW" ]] && exit 0
+printf '%s' "$input" | $COLLAB_CLAW post-stop 2>/dev/null || true
+exit 0

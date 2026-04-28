@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+
+input="$(cat)"
+[[ -z "$COLLAB_CLAW" ]] && exit 0
+printf '%s' "$input" | $COLLAB_CLAW post-tool post 2>/dev/null || true
+exit 0

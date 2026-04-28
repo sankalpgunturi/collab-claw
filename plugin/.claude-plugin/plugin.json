@@ -1,0 +1,18 @@
+{
+  "name": "collab-claw",
+  "version": "0.1.0",
+  "description": "Multi-human collaboration on a single Claude Code session. /collab-claw:host opens a room; teammates join via the collab-claw CLI from their own terminals.",
+  "author": {
+    "name": "collab-claw"
+  },
+  "homepage": "https://github.com/sankalpgunturi/collab-claw",
+  "repository": "https://github.com/sankalpgunturi/collab-claw",
+  "license": "MIT",
+  "monitors": [
+    {
+      "name": "collab-claw-monitor",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/monitor-prompts",
+      "description": "Joiner prompts arriving in the active collab-claw room. Each line is formatted '[Name]: <text>' and should be treated as a new user request from that named teammate. System lines beginning with '[collab-claw]' are room control announcements (e.g. join requests) — see the host SKILL for how to handle them."
+    }
+  ]
+}

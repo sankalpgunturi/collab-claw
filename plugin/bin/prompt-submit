@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# bin/prompt-submit — UserPromptSubmit hook.
+#
+# Two jobs:
+#   1. If the host is in a room, post the host's typed prompt to /events as
+#      a `prompt` event so joiners see it in real time.
+#   2. Read the hook input on stdin (per Claude Code spec) which contains
+#      { prompt: "..." } — we forward that text to `collab-claw post-prompt`.
+#
+# Fail-open: we never block the host's input. exit 0 always.
+
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+
+# Read stdin (hook input JSON)
+input="$(cat)"
+
+if [[ -z "$COLLAB_CLAW" ]]; then
+  exit 0
+fi
+
+# Try to extract the prompt text. We use jq if available, else sed fallback.
+text=""
+if command -v jq >/dev/null 2>&1; then
+  text="$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null || true)"
+fi
+if [[ -z "$text" ]]; then
+  text="$(printf '%s' "$input" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+fi
+
+if [[ -n "$text" ]]; then
+  # Pipe to post-prompt on stdin so quoting/newlines survive
+  printf '%s' "$text" | $COLLAB_CLAW post-prompt 2>/dev/null || true
+fi
+
+exit 0

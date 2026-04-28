@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"
+[[ -z "$COLLAB_CLAW" ]] && { echo "[collab-claw] CLI not found"; exit 1; }
+
+# kick can also be used to deny a pending join request — when the arg is a
+# token-shaped string (long URL-safe base64) we treat it as a requestId.
+arg="${1:-}"
+if [[ -n "$arg" && "$arg" =~ ^[A-Za-z0-9_-]{40,}$ ]]; then
+  exec $COLLAB_CLAW deny "$@"
+fi
+exec $COLLAB_CLAW kick "$@"
