@@ -1,5 +1,5 @@
 // test/regressions.mjs — regression coverage for the high-priority fixes
-// uncovered in the v1 review:
+// uncovered in v1 reviews:
 //
 //   #1  Queue + Last-Event-ID replay: a prompt posted while no host monitor
 //       is connected must be delivered to the next monitor that connects.
@@ -14,6 +14,12 @@
 //       <text>`, not `[[collab-claw]]: ...`.
 //   #5  Multiline encoding: monitor escapes `\n` so Claude Code's monitor
 //       framework gets one notification line per joiner prompt.
+//   #6  Stale system replay: an enqueued "X wants to join" announcement
+//       must NOT be replayed to a late-arriving monitor after the join
+//       request was already approved or denied.
+//   #7  Delivery counting under backpressure: a successful (non-throwing)
+//       SSE write must advance lastDeliveredPromptSeq even when Node's
+//       res.write() returns false (kernel-buffered, not failed).
 //
 // All tests use an isolated $HOME and an in-memory relay on 127.0.0.1.
 
@@ -351,6 +357,115 @@ async function main() {
     // prevents bad names; the monitor render is pure and small.
     check('#5 renderEventLine export available', false, '(skipped — could not import)');
   }
+
+  // ----------------------------------------------------------------
+  // #6  Stale system replay: approved/denied join requests should NOT
+  //     be replayed to a late-arriving monitor
+  // ----------------------------------------------------------------
+
+  // Drain any /prompt-stream subscriber from earlier blocks.
+  await wait(100);
+
+  // Step 1: file a new join request while NO monitor is connected.
+  //         The relay enqueues a kind=system "Dana wants to join" event.
+  const danaR = await fetch(`${URL_}/join-requests`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${ROOM_SECRET}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Dana' }),
+  });
+  const danaJ = await danaR.json();
+  check('#6 join request enqueued', !!danaJ.requestId);
+
+  // Step 2: approve it before any monitor connects (simulates the
+  // "host approved via another channel and is now reloading the plugin"
+  // case). The wait long-poll resolves the joinRequest record to
+  // 'approved'.
+  const danaWait = fetch(`${URL_}/join-requests/${danaJ.requestId}/wait`, {
+    headers: { 'Authorization': `Bearer ${danaJ.requestId}` },
+  }).then(r => r.json());
+  await wait(50);
+  await fetch(`${URL_}/approvals`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${HOST_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: danaJ.requestId }),
+  });
+  const danaApproved = await danaWait;
+  check('#6 join request approved before any monitor saw it', danaApproved.approved === true);
+
+  // Step 3: connect a fresh monitor with NO Last-Event-ID. The relay
+  // would normally replay everything > lastDeliveredPromptSeq, but the
+  // stale "Dana wants to join" announcement must be filtered out.
+  const staleEvents = [];
+  const staleCtrl = new AbortController();
+  const staleResp = await fetch(`${URL_}/prompt-stream`, {
+    headers: { 'Authorization': `Bearer ${HOST_TOKEN}`, 'Accept': 'text/event-stream' },
+    signal: staleCtrl.signal,
+  });
+  drainSse(staleResp.body, ev => staleEvents.push(ev));
+  await wait(400);
+
+  const sawStale = staleEvents.some(e =>
+    e.kind === 'system' && /Dana wants to join/.test(String(e.text || '')),
+  );
+  check('#6 resolved join announcement is NOT replayed to late monitor', !sawStale);
+
+  // Sanity: a NEW prompt sent now still flows through (we didn't break
+  // the monitor's connection by filtering).
+  await fetch(`${URL_}/prompts`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${memberToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'after-stale-filter sentinel' }),
+  });
+  const sawSentinel = await poll(() =>
+    staleEvents.some(e => e.text === 'after-stale-filter sentinel'),
+  );
+  check('#6 fresh prompts still flow after stale-filter pass', sawSentinel);
+
+  staleCtrl.abort();
+  await wait(150);
+
+  // ----------------------------------------------------------------
+  // #7  Delivery counting: lastDeliveredPromptSeq must advance for
+  //     every successfully written prompt, regardless of write()
+  //     backpressure return value.
+  // ----------------------------------------------------------------
+
+  // Connect a monitor with Last-Event-ID set to "very high" so the
+  // replay buffer is empty when we connect — gives us a clean baseline.
+  const baselineHealth = await (await fetch(`${URL_}/healthz`)).json();
+  const baselineDeliveredSeq = baselineHealth.promptQueue.lastDeliveredSeq;
+
+  const dEvents = [];
+  const dCtrl = new AbortController();
+  const dResp = await fetch(`${URL_}/prompt-stream`, {
+    headers: {
+      'Authorization' : `Bearer ${HOST_TOKEN}`,
+      'Accept'        : 'text/event-stream',
+      'Last-Event-ID' : '999999',
+    },
+    signal: dCtrl.signal,
+  });
+  drainSse(dResp.body, ev => dEvents.push(ev));
+  await wait(150);
+
+  // Post a prompt — the connected subscriber should receive it and
+  // lastDeliveredPromptSeq should advance by exactly 1.
+  const postD = await fetch(`${URL_}/prompts`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${memberToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'delivered-counter check' }),
+  });
+  const postDJ = await postD.json();
+  check('#7 POST /prompts reports delivered=1 for live subscriber', postDJ.delivered === 1);
+
+  // Allow the relay tick to update lastDeliveredPromptSeq.
+  await wait(100);
+  const afterHealth = await (await fetch(`${URL_}/healthz`)).json();
+  check('#7 lastDeliveredPromptSeq advanced after live delivery',
+        afterHealth.promptQueue.lastDeliveredSeq > baselineDeliveredSeq);
+
+  dCtrl.abort();
+  await wait(150);
 
   // ----------------------------------------------------------------
   // teardown

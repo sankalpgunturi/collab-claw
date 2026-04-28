@@ -1,6 +1,6 @@
 {
   "name": "collab-claw",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pair-program with one Claude across multiple laptops. A Claude Code plugin + CLI for multi-human collaboration on a single Claude session.",
   "type": "module",
   "bin": {

@@ -45,8 +45,9 @@
 //     existing host monitor SSE first. This prevents duplicated prompt
 //     delivery to Claude when stale monitor processes linger after plugin
 //     reload (Spike B observation: monitors can outlive their parent
-//     session). The monitor also keeps a PID-file lock client-side as
-//     defense in depth.
+//     session). This is the *only* singleton enforcement; an earlier
+//     client-side PID-file lock turned out to starve the actually-hosting
+//     monitor in multi-session setups (see commands/monitor.mjs header).
 //
 // Tokens are minted by this process and stored in memory only. Host token
 // comes in from env at startup (so the host CLI knows it without IPC).
@@ -186,13 +187,17 @@ function writeSseEvent(res, payload, seq) {
   return res.write(`${id}data: ${JSON.stringify(payload)}\n\n`);
 }
 
-/** Fan out a payload to a Map<res, *>; returns the number of writes that
- *  the kernel buffer accepted. Drops dead subscribers. */
+/** Fan out a payload to a Map<res, *>. Returns the count of subscribers
+ *  the write was accepted by (i.e. didn't throw — Node's `res.write()`
+ *  may return `false` under backpressure but the data is still queued
+ *  for delivery, so we count those as delivered too). Drops subscribers
+ *  whose write threw (socket dead). */
 function fanoutMap(map, payload, seq) {
   let n = 0;
   for (const [r] of map) {
     try {
-      if (writeSseEvent(r, payload, seq)) n++;
+      writeSseEvent(r, payload, seq);
+      n++;
     } catch {
       map.delete(r);
     }
@@ -261,7 +266,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       roomId: ROOM_ID,
       hostName: HOST_NAME,
-      version: '0.1.1',
+      version: '0.1.2',
     });
   }
 
@@ -440,14 +445,25 @@ const server = http.createServer(async (req, res) => {
       ? Number(String(rawId).trim())
       : lastDeliveredPromptSeq;
 
-    const replay = promptQueue.filter(e => e.seq > since);
+    // Filter out system join announcements whose request has already been
+    // resolved (approved or denied). Otherwise a monitor that connects
+    // late — e.g. after /plugin reload — would re-announce ghosts and
+    // Claude would try to approve a request that's no longer pending.
+    const replay = promptQueue.filter(({ seq, ev }) => {
+      if (seq <= since) return false;
+      if (ev && ev.kind === 'system' && ev.requestId) {
+        const rec = joinRequests.get(ev.requestId);
+        if (!rec || rec.status !== 'pending') return false;
+      }
+      return true;
+    });
+
     if (replay.length > 0) {
       log(`replaying ${replay.length} prompt(s) since seq=${since}`);
       for (const { seq, ev } of replay) {
         try {
-          if (writeSseEvent(res, ev, seq)) {
-            lastDeliveredPromptSeq = Math.max(lastDeliveredPromptSeq, seq);
-          }
+          writeSseEvent(res, ev, seq);
+          lastDeliveredPromptSeq = Math.max(lastDeliveredPromptSeq, seq);
         } catch { break; }
       }
     }

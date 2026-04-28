@@ -148,6 +148,14 @@ async function main() {
   const midStreamLeaked = stdoutLines.some(l => l.includes('mid stream drop check'));
   check('MID-STREAM: prompt dropped after session.json deleted', !midStreamLeaked);
 
+  // 6. SINGLETON-LOCK REMOVED: the monitor must NOT create a global
+  //    ~/.collab-claw/monitor.pid file. (Earlier versions did, and that
+  //    starved the actually-hosting monitor in multi-Claude-session
+  //    setups. Relay-side single-subscriber is now the only enforcement.)
+  const pidPath = join(TMP, '.collab-claw', 'monitor.pid');
+  check('no global monitor.pid created (client-side singleton removed)',
+        !existsSync(pidPath));
+
   // Cleanup
   monitor.kill('SIGTERM');
   relay.kill('SIGTERM');

@@ -30,10 +30,21 @@
 //                 (matches what the host SKILL teaches Claude to recognize
 //                  as a control announcement, not a teammate prompt)
 //
-// Singleton: a small PID-file lock at ~/.collab-claw/monitor.pid prevents
-// duplicate monitor processes from emitting prompts to Claude twice. The
-// relay also enforces single-subscriber on /prompt-stream as defense in
-// depth.
+// Singleton policy:
+//
+//   We deliberately do NOT take a global PID-file lock. Earlier versions of
+//   this monitor did, and that turned out to be wrong: every Claude Code
+//   session spawns a monitor at SessionStart (because `when: always`), so
+//   in a multi-session setup the first idle monitor would grab the lock
+//   and starve the *actually hosting* session's monitor. Worse, the idle
+//   monitor would later see `session.json` flip into host mode and start
+//   emitting joiner prompts to its own (idle) Claude session — i.e.
+//   delivering prompts to the wrong window.
+//
+//   The relay enforces single-subscriber on /prompt-stream (last-writer-
+//   wins), and we exit cleanly when stdout closes (Claude session ended),
+//   so the live host monitor naturally remains the active one without a
+//   client-side lock.
 
 import { readSession } from '../state.mjs';
 import { mkdirSync, appendFileSync, writeFileSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
@@ -42,8 +53,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const COLLAB_DIR = join(homedir(), '.collab-claw');
-const PID_FILE   = join(COLLAB_DIR, 'monitor.pid');
 const STATE_FILE = join(COLLAB_DIR, 'monitor-state.json');
+const LEGACY_PID = join(COLLAB_DIR, 'monitor.pid'); // cleaned up on first run; see below
 const LOG_DIR  = join(homedir(), '.claude', 'data', 'collab-claw');
 const LOG_FILE = join(LOG_DIR, 'monitor.log');
 const MAX_CONN_MS = 30_000;
@@ -59,46 +70,6 @@ function log(msg) {
 function gateOpen() {
   const s = readSession();
   return !!(s && s.mode === 'host' && typeof s.roomId === 'string' && s.roomId.length > 0);
-}
-
-function pidAlive(pid) {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; }
-  catch (e) { return e.code === 'EPERM'; } // EPERM means process exists but we don't own it
-}
-
-/** Acquire a PID-file lock. Returns true if we're the singleton. False
- *  otherwise (caller should exit). Stale PID files (process gone) are
- *  reclaimed automatically. */
-function acquirePidLock() {
-  try { mkdirSync(COLLAB_DIR, { recursive: true, mode: 0o700 }); } catch {}
-  if (existsSync(PID_FILE)) {
-    try {
-      const txt = readFileSync(PID_FILE, 'utf8').trim();
-      const other = Number(txt);
-      if (pidAlive(other) && other !== process.pid) {
-        log(`PID lock held by pid=${other}; this monitor exiting (defense in depth — relay also enforces singleton)`);
-        return false;
-      }
-      log(`reclaiming stale PID file (was pid=${other})`);
-    } catch {}
-  }
-  try {
-    writeFileSync(PID_FILE, String(process.pid), { mode: 0o600 });
-    return true;
-  } catch (e) {
-    log(`could not write PID file: ${e.message} (continuing anyway; relay enforces singleton)`);
-    return true;
-  }
-}
-
-function releasePidLock() {
-  try {
-    if (existsSync(PID_FILE)) {
-      const txt = readFileSync(PID_FILE, 'utf8').trim();
-      if (Number(txt) === process.pid) unlinkSync(PID_FILE);
-    }
-  } catch {}
 }
 
 // Key the seq cursor on a hash of the host token. Each `collab-claw host`
@@ -158,7 +129,9 @@ export function renderEventLine(ev) {
   return null;
 }
 
+let stdoutDead = false;
 function emit(line) {
+  if (stdoutDead) return;
   try { process.stdout.write(line + '\n'); } catch {}
 }
 
@@ -257,17 +230,35 @@ async function consumeOnce() {
 export async function run(args) {
   log(`========== monitor started pid=${process.pid} ==========`);
 
-  if (!acquirePidLock()) {
-    process.exit(0);
-  }
+  // One-shot migration: older versions wrote monitor.pid as a singleton
+  // lock. Removing it is now the right behavior (see header comment) but
+  // a leftover file from a previous version isn't harmful — just clean it
+  // up if we own it so it doesn't confuse anyone reading the dir.
+  try {
+    if (existsSync(LEGACY_PID)) {
+      const txt = readFileSync(LEGACY_PID, 'utf8').trim();
+      if (Number(txt) === process.pid) unlinkSync(LEGACY_PID);
+    }
+  } catch {}
 
-  const cleanup = () => { releasePidLock(); };
-  process.on('exit',    cleanup);
-  process.on('SIGINT',  () => { log('SIGINT');  releasePidLock(); process.exit(0); });
-  process.on('SIGTERM', () => { log('SIGTERM'); releasePidLock(); process.exit(0); });
+  // Stdout EPIPE means our Claude session is gone (reader closed the pipe).
+  // Without this handler the process either crashes loudly or — worse, with
+  // try/catch around stdout.write — keeps polling forever, replaying the
+  // singleton-starvation bug in a new disguise. Exit cleanly so the relay's
+  // last-writer-wins enforcement promotes the next live monitor.
+  process.stdout.on('error', (e) => {
+    if (e && (e.code === 'EPIPE' || e.code === 'EBADF')) {
+      stdoutDead = true;
+      log(`stdout closed (${e.code}); Claude session ended, exiting`);
+      process.exit(0);
+    }
+  });
 
-  let alive = true;
-  while (alive) {
+  process.on('SIGINT',  () => { log('SIGINT');  process.exit(0); });
+  process.on('SIGTERM', () => { log('SIGTERM'); process.exit(0); });
+
+  while (true) {
+    if (stdoutDead) return 0;
     if (gateOpen()) {
       await consumeOnce();
     } else {
@@ -275,5 +266,4 @@ export async function run(args) {
     }
     await new Promise(r => setTimeout(r, IDLE_RECHECK_MS));
   }
-  return 0;
 }

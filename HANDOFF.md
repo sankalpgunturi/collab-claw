@@ -1,9 +1,11 @@
-# HANDOFF — collab-claw v0.1.1
+# HANDOFF — collab-claw v0.1.2
 
-Status: **shipped + hardened**. v1 is live at
-`github.com/sankalpgunturi/collab-claw`. All five test suites pass (70
+Status: **shipped + hardened twice**. v1 is live at
+`github.com/sankalpgunturi/collab-claw`. All five test suites pass (77
 cases). The marketplace install path is verified. The eight findings
-from the v1 review are all resolved — see "Review fixes (v0.1.1)" below.
+from the first v1 review are resolved (see "Review fixes (v0.1.1)") and
+the three follow-up findings from the second review are resolved (see
+"Review fixes (v0.1.2)").
 
 ## What you can do right now
 
@@ -62,8 +64,9 @@ Eight findings, all addressed:
 2. **Single host-monitor subscriber is enforced server-side.** A new
    `/prompt-stream` connect evicts any existing one (last-writer-wins),
    so a stale post-`/plugin reload` monitor can't double-deliver
-   prompts to Claude. The monitor also keeps a PID-file lock at
-   `~/.collab-claw/monitor.pid` as defense in depth. (`#2`)
+   prompts to Claude. (Originally also had a client-side PID lock; that
+   was removed in v0.1.2 — it caused worse problems than it solved. See
+   v0.1.2 fix #1 below.) (`#2`)
 
 3. **Kicked members' transcript SSE is closed by the relay.** The
    transcript-stream subscriber map now stores `(res, memberId)`, so
@@ -97,14 +100,59 @@ Eight findings, all addressed:
    uses `JSON.parse` to extract the prompt. Robust on multiline and
    quote-escaped input.
 
+## Review fixes (v0.1.2)
+
+Three follow-up findings, all addressed:
+
+1. **Removed the global monitor PID lock.** Earlier defense-in-depth
+   actually caused the bug it was meant to prevent: every Claude Code
+   session spawns a monitor (because `when: always`), so in a
+   multi-session setup the first idle monitor would grab
+   `~/.collab-claw/monitor.pid` and starve the actually-hosting
+   session's monitor. Worse, that idle monitor would later see
+   `session.json` flip to host mode and start emitting joiner prompts
+   to its own (idle) Claude window. The fix:
+
+   - Drop the PID file entirely. Relay-side single-subscriber on
+     `/prompt-stream` (last-writer-wins) is the only enforcement.
+   - Add a `process.stdout.on('error', …)` handler so monitors whose
+     parent Claude session has closed the stdout pipe exit cleanly on
+     EPIPE — the next live monitor naturally takes over via the
+     relay's eviction logic.
+
+   `test/monitor-gate.mjs` now asserts no `monitor.pid` is created.
+
+2. **Backpressure no longer counted as non-delivery.** Node's
+   `res.write()` returns `false` when its internal buffer is full but
+   the data is still queued for delivery. Old code only counted writes
+   that returned `true`, so a slow monitor could leave
+   `lastDeliveredPromptSeq` stuck and trigger duplicate replays on the
+   next reconnect. `fanoutMap()` and the `/prompt-stream` replay loop
+   now count any non-throwing write as delivered.
+
+   Covered by `test/regressions.mjs` `#7` (lastDeliveredPromptSeq
+   advances for a live subscriber).
+
+3. **Stale join announcements no longer replay after approval/denial.**
+   `/join-requests` enqueues a `kind=system` "X wants to join" event
+   into the prompt queue so reconnecting monitors don't miss it. But
+   if the request was already approved or denied by the time the
+   monitor connects, replaying that announcement would prompt Claude
+   to try to approve a no-longer-pending request. The replay path now
+   filters those out by checking `joinRequests.get(requestId).status`.
+
+   Covered by `test/regressions.mjs` `#6`.
+
 ## What's known to work (verified by tests)
 
 - **Relay**: 12 user-facing routes plus `/healthz`, `/info`, and a
   test-only `/debug/requests`. Bearer auth (host token / member
   token / request-id / room secret), SSE keepalives, ring buffer for
   backfill, prompt queue with `Last-Event-ID` replay,
-  single-subscriber `/prompt-stream`, proper 401/404/409 handling.
-  (`test/smoke.mjs` 21 cases + `test/regressions.mjs` 23 cases)
+  single-subscriber `/prompt-stream`, backpressure-tolerant delivery
+  counting, stale-system-event filtering on replay, proper 401/404/409
+  handling. (`test/smoke.mjs` 21 cases + `test/regressions.mjs` 29
+  cases)
 
 - **Pairing handshake**: joiner POSTs `/join-requests` with the room
   secret → long-polls `/wait` → host approves via host token →
@@ -127,15 +175,20 @@ Eight findings, all addressed:
     `[Name]: <text>` lines that wake an idle Claude.
   - **Mid-stream close**: deleting session.json while events are in
     flight drops them before they reach stdout.
-    (`test/monitor-gate.mjs`, 5 cases)
+  - **No client-side singleton**: the monitor must not write
+    `~/.collab-claw/monitor.pid` (removed in v0.1.2; see v0.1.2 fix
+    #1).
+    (`test/monitor-gate.mjs`, 6 cases)
 
 - **TUI plain mode**: when stdin/stdout aren't TTYs, the joiner CLI
   falls back to readline prompts and plain-text event rendering.
   (`test/tui-plain.mjs`, 3 cases)
 
-- **Regression coverage** for the eight v0.1.1 review fixes — queue
-  replay, singleton, kicked SSE close, name validation, system
-  format, multiline encoding. (`test/regressions.mjs`, 23 cases)
+- **Regression coverage** for both review rounds — queue replay,
+  singleton, kicked SSE close, name validation, system format,
+  multiline encoding, stale-system-event skip on replay, and
+  delivery counting under backpressure. (`test/regressions.mjs`,
+  29 cases)
 
 - **Marketplace install path**: a fresh `git clone` of the published
   repo has the right layout, executable bits on all bin/ scripts, and
@@ -205,7 +258,7 @@ Eight findings, all addressed:
 
 ```bash
 cd ~/Repositories/collab-claw
-npm test                 # 70/70 should pass
+npm test                 # 77/77 should pass
 
 # Manual sanity:
 npm link                 # ensure global `collab-claw` is on PATH

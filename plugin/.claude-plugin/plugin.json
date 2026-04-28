@@ -1,6 +1,6 @@
 {
   "name": "collab-claw",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Multi-human collaboration on a single Claude Code session. /collab-claw:host opens a room; teammates join via the collab-claw CLI from their own terminals.",
   "author": {
     "name": "collab-claw"
