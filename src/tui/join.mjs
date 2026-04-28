@@ -250,6 +250,13 @@ export async function startTui(session) {
           },
           signal: streamCtrl.signal,
         });
+        if (r.status === 401) {
+          // Token was invalidated server-side (kick or shutdown). Bail
+          // out cleanly instead of reconnecting in a tight loop.
+          renderTranscriptLine(red('! removed from room (auth rejected)'));
+          await teardown('kicked');
+          return;
+        }
         if (!r.ok || !r.body) {
           renderTranscriptLine(red(`! transcript SSE bad status: ${r.status}`));
           await new Promise(rr => setTimeout(rr, 1000));
@@ -315,7 +322,7 @@ export async function startTui(session) {
       return;
     }
     if (kind === 'system') {
-      renderTranscriptLine(`${yellow(name || '[collab-claw]')} ${dim(text)}`);
+      renderTranscriptLine(`${yellow('[collab-claw]')} ${dim(text)}`);
       return;
     }
     renderTranscriptLine(`${dim(`[${kind}]`)} ${name ? bold(name) + ' ' : ''}${text}`);

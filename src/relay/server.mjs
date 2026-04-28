@@ -16,6 +16,8 @@
 //
 //   POST /prompts                       — joiner prompt (auth: memberToken)
 //   GET  /prompt-stream                 — SSE: joiner prompts → host monitor (auth: hostToken)
+//                                          Single-subscriber. Last-Event-ID supported
+//                                          for replay across reconnects.
 //
 //   POST /events                        — host hook events (auth: hostToken)
 //   GET  /transcript-stream             — SSE: events → joiner TUI (auth: memberToken)
@@ -26,8 +28,25 @@
 //   POST /kicks                         — host kicks a member (auth: hostToken)
 //   POST /shutdown                      — host ends the room (auth: hostToken)
 //
-// Twelve user-facing routes plus /healthz + /info. Tracks the architecture
-// in PLAN.md §6.
+// Prompt delivery model (this is the bit that's easy to get wrong):
+//
+//   * Every prompt gets a monotonic `seq`. We keep a small queue of recent
+//     prompts (PROMPT_QUEUE_SIZE) so a reconnecting host monitor can resume
+//     from where it left off using the standard SSE `Last-Event-ID` header.
+//
+//   * `lastDeliveredPromptSeq` tracks the highest seq that we successfully
+//     wrote to ≥ 1 host monitor subscriber. If the monitor was disconnected
+//     when a prompt arrived, that prompt sits in the queue with seq >
+//     lastDeliveredPromptSeq. The next monitor that connects (without a
+//     `Last-Event-ID`) gets those undelivered prompts replayed, ensuring no
+//     drops during the natural reconnect windows of the always-on monitor.
+//
+//   * `/prompt-stream` is single-subscriber: a new connection closes any
+//     existing host monitor SSE first. This prevents duplicated prompt
+//     delivery to Claude when stale monitor processes linger after plugin
+//     reload (Spike B observation: monitors can outlive their parent
+//     session). The monitor also keeps a PID-file lock client-side as
+//     defense in depth.
 //
 // Tokens are minted by this process and stored in memory only. Host token
 // comes in from env at startup (so the host CLI knows it without IPC).
@@ -46,10 +65,31 @@ const ROOM_SECRET = process.env.COLLAB_CLAW_ROOM_SECRET || '';
 const ROOM_ID    = process.env.COLLAB_CLAW_ROOM_ID    || 'default-room';
 const HOST_NAME  = process.env.COLLAB_CLAW_HOST_NAME  || 'host';
 const RING_SIZE  = Number(process.env.COLLAB_CLAW_RING || 200);
+const PROMPT_QUEUE_SIZE = Number(process.env.COLLAB_CLAW_PROMPT_QUEUE || 200);
 
 if (!HOST_TOKEN || !ROOM_SECRET) {
   console.error('relay: COLLAB_CLAW_HOST_TOKEN and COLLAB_CLAW_ROOM_SECRET env vars are required');
   process.exit(2);
+}
+
+// Same regex as src/state.mjs setName() — defense in depth so the relay
+// can never be tricked into broadcasting a malicious name to Claude as
+// a prompt. 1-32 chars, alphanumeric/space/_/-.
+const NAME_RE = /^[A-Za-z0-9_\- ]{1,32}$/;
+
+function isValidName(s) {
+  return typeof s === 'string' && NAME_RE.test(s);
+}
+
+// Conservative text sanitizer. Keeps text printable; strips C0 control
+// chars (except newline) and the C1 / DEL range. Newlines are preserved
+// in the stored event but the monitor escapes them before emitting to
+// stdout (see commands/monitor.mjs).
+function sanitizeText(s) {
+  return String(s ?? '')
+    .replace(/[\x00-\x09\x0B-\x1F\x7F]/g, '')
+    // Cap at 8 KB so a malicious joiner can't fill the queue with one giant prompt
+    .slice(0, 8 * 1024);
 }
 
 // ---------- in-memory state ----------
@@ -61,10 +101,23 @@ const memberTokens = new Map();
 /** joinRequests: id -> { id, name, secret, status, memberToken?, memberId?, waiters: [res, ...], createdAt } */
 const joinRequests = new Map();
 
-const promptSubs     = new Set(); // SSE responses for /prompt-stream
-const transcriptSubs = new Set(); // SSE responses for /transcript-stream
+/** Single-subscriber set. Map<res, {connectedAt}>. New connection evicts
+ *  any existing entries (last-writer-wins). */
+const promptSubs = new Map();
 
-const ring = []; // last RING_SIZE transcript events for backfill
+/** Map<res, memberId>. Lets us close all SSE streams for a kicked/left
+ *  member without dropping unrelated subscribers. */
+const transcriptSubs = new Map();
+
+/** Last RING_SIZE transcript events, for /recent backfill. */
+const transcriptRing = [];
+
+/** Sequenced prompt queue + cursor for replay. Each entry is
+ *  { seq:number, ev:object }. The queue is bounded by PROMPT_QUEUE_SIZE. */
+const promptQueue = [];
+let nextPromptSeq = 1;
+/** Highest seq successfully delivered to ≥ 1 host monitor subscriber. */
+let lastDeliveredPromptSeq = 0;
 
 // ---------- utilities ----------
 
@@ -104,10 +157,7 @@ function bearer(req) {
 }
 
 function authHost(req) { return bearer(req) === HOST_TOKEN; }
-function authRoomSecret(req) {
-  // Joiners send the room secret in the Authorization header for /join-requests.
-  return bearer(req) === ROOM_SECRET;
-}
+function authRoomSecret(req) { return bearer(req) === ROOM_SECRET; }
 function authMember(req) {
   const t = bearer(req);
   return memberTokens.has(t) ? memberTokens.get(t) : null;
@@ -131,18 +181,57 @@ function openSse(res) {
   return res;
 }
 
-function fanout(set, payload) {
-  const line = `data: ${JSON.stringify(payload)}\n\n`;
+function writeSseEvent(res, payload, seq) {
+  const id = seq != null ? `id: ${seq}\n` : '';
+  return res.write(`${id}data: ${JSON.stringify(payload)}\n\n`);
+}
+
+/** Fan out a payload to a Map<res, *>; returns the number of writes that
+ *  the kernel buffer accepted. Drops dead subscribers. */
+function fanoutMap(map, payload, seq) {
   let n = 0;
-  for (const r of set) {
-    try { r.write(line); n++; } catch { set.delete(r); }
+  for (const [r] of map) {
+    try {
+      if (writeSseEvent(r, payload, seq)) n++;
+    } catch {
+      map.delete(r);
+    }
   }
   return n;
 }
 
-function pushEvent(ev) {
-  ring.push(ev);
-  if (ring.length > RING_SIZE) ring.shift();
+function pushTranscript(ev) {
+  transcriptRing.push(ev);
+  if (transcriptRing.length > RING_SIZE) transcriptRing.shift();
+}
+
+function enqueuePrompt(ev) {
+  const seq = nextPromptSeq++;
+  promptQueue.push({ seq, ev });
+  if (promptQueue.length > PROMPT_QUEUE_SIZE) promptQueue.shift();
+  return seq;
+}
+
+function evictPromptSubs(reason) {
+  if (promptSubs.size === 0) return;
+  log(`evicting ${promptSubs.size} existing prompt subscriber(s): ${reason}`);
+  for (const [r] of promptSubs) {
+    try { r.end(); } catch {}
+  }
+  promptSubs.clear();
+}
+
+function closeMemberTranscriptSubs(memberId, reason) {
+  let closed = 0;
+  for (const [r, id] of transcriptSubs) {
+    if (id === memberId) {
+      try { r.end(); } catch {}
+      transcriptSubs.delete(r);
+      closed++;
+    }
+  }
+  if (closed > 0) log(`closed ${closed} transcript subscriber(s) for ${memberId.slice(0, 8)}…: ${reason}`);
+  return closed;
 }
 
 // ---------- request handler ----------
@@ -163,6 +252,7 @@ const server = http.createServer(async (req, res) => {
       members: members.size,
       promptSubscribers: promptSubs.size,
       transcriptSubscribers: transcriptSubs.size,
+      promptQueue: { size: promptQueue.length, lastSeq: nextPromptSeq - 1, lastDeliveredSeq: lastDeliveredPromptSeq },
     });
   }
 
@@ -171,7 +261,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       roomId: ROOM_ID,
       hostName: HOST_NAME,
-      version: '0.1.0',
+      version: '0.1.1',
     });
   }
 
@@ -185,10 +275,12 @@ const server = http.createServer(async (req, res) => {
     let body;
     try { body = await readJson(req); }
     catch { return send(res, 400, { error: 'bad json' }); }
-    const name = String(body.name || '').trim().slice(0, 32);
-    if (!name) return send(res, 400, { error: 'name required' });
+    const name = String(body.name || '').trim();
+    if (!isValidName(name)) {
+      log(`POST /join-requests rejected: bad name "${String(body.name || '').slice(0, 64)}"`);
+      return send(res, 400, { error: 'name must be 1-32 chars, alphanumeric/space/_/-' });
+    }
 
-    // Reject duplicate names (in members or in pending requests)
     const dupeMember = [...members.values()].some(m => m.name.toLowerCase() === name.toLowerCase());
     const dupePending = [...joinRequests.values()].some(r => r.status === 'pending' && r.name.toLowerCase() === name.toLowerCase());
     if (dupeMember || dupePending) {
@@ -196,28 +288,23 @@ const server = http.createServer(async (req, res) => {
     }
 
     const id = token32();
-    const reqRec = {
-      id, name,
-      status: 'pending',
-      waiters: [],
-      createdAt: ts(),
-    };
+    const reqRec = { id, name, status: 'pending', waiters: [], createdAt: ts() };
     joinRequests.set(id, reqRec);
 
     log(`join-request id=${id.slice(0, 8)}… name="${name}"`);
 
-    // Surface to host monitor as a system notification line. The SKILL body
-    // teaches the host's Claude how to react: it should say "Sankalp wants
-    // to join the room. Approve with /collab-claw:approve <id>" or just call
-    // the approve skill directly. We send it as a "prompt" event so it
-    // travels the same code path as joiner prompts.
-    fanout(promptSubs, {
+    // Surface to host monitor as a system notification. The monitor renders
+    // kind=system as `[collab-claw] <text>` (single brackets, no name colon)
+    // so it matches what the host SKILL teaches Claude to recognize.
+    const sysEv = {
       kind: 'system',
-      name: '[collab-claw]',
       text: `${name} wants to join the room. Approve with /collab-claw:approve ${id} (or /collab-claw:kick ${id} to deny).`,
       requestId: id,
       ts: ts(),
-    });
+    };
+    const seq = enqueuePrompt(sysEv);
+    const delivered = fanoutMap(promptSubs, sysEv, seq);
+    if (delivered > 0) lastDeliveredPromptSeq = Math.max(lastDeliveredPromptSeq, seq);
 
     return send(res, 200, { ok: true, requestId: id });
   }
@@ -226,8 +313,6 @@ const server = http.createServer(async (req, res) => {
     const id = path.slice('/join-requests/'.length, -'/wait'.length);
     const rec = joinRequests.get(id);
     if (!rec) return send(res, 404, { error: 'unknown request' });
-    // Auth on the request id itself: only the joiner with the id can wait.
-    // (Belt-and-suspenders: also accept room secret since the joiner has it.)
     const provided = bearer(req);
     if (provided !== id && provided !== ROOM_SECRET) {
       return send(res, 401, { error: 'unauthorized' });
@@ -235,21 +320,17 @@ const server = http.createServer(async (req, res) => {
 
     if (rec.status === 'approved') {
       return send(res, 200, {
-        ok: true,
-        approved: true,
-        memberToken: rec.memberToken,
-        memberId   : rec.memberId,
-        roomId     : ROOM_ID,
-        name       : rec.name,
+        ok: true, approved: true,
+        memberToken: rec.memberToken, memberId: rec.memberId,
+        roomId: ROOM_ID, name: rec.name,
       });
     }
     if (rec.status === 'denied') {
       return send(res, 200, { ok: true, approved: false, reason: rec.reason || 'denied' });
     }
 
-    // Long-poll: hold the response. Resolved when host approves/denies.
     rec.waiters.push(res);
-    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const TIMEOUT_MS = 5 * 60 * 1000;
     const t = setTimeout(() => {
       const idx = rec.waiters.indexOf(res);
       if (idx >= 0) rec.waiters.splice(idx, 1);
@@ -274,8 +355,6 @@ const server = http.createServer(async (req, res) => {
     if (!rec) return send(res, 404, { error: 'unknown request' });
     if (rec.status !== 'pending') return send(res, 409, { error: `already ${rec.status}` });
 
-    // Mint member token, register member, resolve waiters with the token
-    // directly (the host plugin never sees the member token).
     const memberId    = token32();
     const memberToken = token32();
     members.set(memberId, { id: memberId, name: rec.name, token: memberToken, joinedAt: ts() });
@@ -292,14 +371,12 @@ const server = http.createServer(async (req, res) => {
         send(w, 200, {
           ok: true, approved: true,
           memberToken, memberId,
-          roomId: ROOM_ID,
-          name: rec.name,
+          roomId: ROOM_ID, name: rec.name,
         });
       } catch {}
     }
     rec.waiters.length = 0;
 
-    // Tell the host plugin only the bare minimum (no token).
     return send(res, 200, { ok: true, name: rec.name });
   }
 
@@ -332,28 +409,50 @@ const server = http.createServer(async (req, res) => {
     try { body = await readJson(req); }
     catch { return send(res, 400, { error: 'bad json' }); }
     const member = members.get(memberId);
-    const text = String(body.text || '').trim();
+    const text = sanitizeText(body.text || '').trim();
     if (!text) return send(res, 400, { error: 'text required' });
-    const ev = {
-      kind: 'prompt',
-      name: member.name,
-      text,
-      ts  : ts(),
-    };
-    // Send to host monitor for Claude wakeup
-    const delivered = fanout(promptSubs, ev);
-    // Also broadcast to other joiners so everyone sees who said what
-    fanout(transcriptSubs, ev);
-    pushEvent(ev);
-    log(`POST /prompts name="${member.name}" len=${text.length} delivered_to_host=${delivered}`);
-    return send(res, 200, { ok: true, delivered });
+    const ev = { kind: 'prompt', name: member.name, text, ts: ts() };
+
+    const seq = enqueuePrompt(ev);
+    const delivered = fanoutMap(promptSubs, ev, seq);
+    if (delivered > 0) lastDeliveredPromptSeq = Math.max(lastDeliveredPromptSeq, seq);
+    fanoutMap(transcriptSubs, ev);
+    pushTranscript(ev);
+    log(`POST /prompts name="${member.name}" len=${text.length} seq=${seq} delivered_to_host=${delivered}`);
+    return send(res, 200, { ok: true, seq, delivered });
   }
 
   if (method === 'GET' && path === '/prompt-stream') {
     if (!authHost(req)) return send(res, 401, { error: 'unauthorized' });
+
+    // Single-subscriber: a new connect evicts any existing one. This
+    // prevents duplicate prompt delivery to Claude when a stale monitor
+    // process from a previous /plugin reload is still hanging around.
+    evictPromptSubs('new /prompt-stream connection');
+
     log('GET /prompt-stream subscribe (host monitor)');
     openSse(res);
-    promptSubs.add(res);
+
+    // Replay queue: parse Last-Event-ID. If absent, use lastDeliveredPromptSeq
+    // so a fresh monitor only receives what was never delivered to anyone.
+    const rawId = req.headers['last-event-id'];
+    const since = (rawId != null && /^\d+$/.test(String(rawId).trim()))
+      ? Number(String(rawId).trim())
+      : lastDeliveredPromptSeq;
+
+    const replay = promptQueue.filter(e => e.seq > since);
+    if (replay.length > 0) {
+      log(`replaying ${replay.length} prompt(s) since seq=${since}`);
+      for (const { seq, ev } of replay) {
+        try {
+          if (writeSseEvent(res, ev, seq)) {
+            lastDeliveredPromptSeq = Math.max(lastDeliveredPromptSeq, seq);
+          }
+        } catch { break; }
+      }
+    }
+
+    promptSubs.set(res, { connectedAt: ts() });
     res.on('close', () => {
       promptSubs.delete(res);
       log('GET /prompt-stream disconnect');
@@ -373,8 +472,8 @@ const server = http.createServer(async (req, res) => {
       payload: (typeof body.payload === 'object' && body.payload) ? body.payload : null,
       ts     : ts(),
     };
-    pushEvent(ev);
-    const delivered = fanout(transcriptSubs, ev);
+    pushTranscript(ev);
+    const delivered = fanoutMap(transcriptSubs, ev);
     log(`POST /events kind=${ev.kind} name="${ev.name}" len=${ev.text.length} delivered=${delivered}`);
     return send(res, 200, { ok: true, delivered });
   }
@@ -384,7 +483,7 @@ const server = http.createServer(async (req, res) => {
     if (!memberId) return send(res, 401, { error: 'unauthorized' });
     log(`GET /transcript-stream subscribe (member ${memberId.slice(0,8)}…)`);
     openSse(res);
-    transcriptSubs.add(res);
+    transcriptSubs.set(res, memberId);
     res.on('close', () => {
       transcriptSubs.delete(res);
       log('GET /transcript-stream disconnect');
@@ -395,7 +494,7 @@ const server = http.createServer(async (req, res) => {
   if (method === 'GET' && path === '/recent') {
     const memberId = authMember(req);
     if (!memberId) return send(res, 401, { error: 'unauthorized' });
-    return send(res, 200, { ok: true, events: ring.slice(-RING_SIZE) });
+    return send(res, 200, { ok: true, events: transcriptRing.slice(-RING_SIZE) });
   }
 
   if (method === 'GET' && path === '/debug/requests') {
@@ -420,10 +519,12 @@ const server = http.createServer(async (req, res) => {
       members.delete(memberId);
       memberTokens.delete(m.token);
       log(`leave name="${m.name}"`);
-      // Announce leave to others via transcript
-      const ev = { kind: 'system', name: '[collab-claw]', text: `${m.name} left the room.`, ts: ts() };
-      fanout(transcriptSubs, ev);
-      pushEvent(ev);
+      const ev = { kind: 'system', name: 'collab-claw', text: `${m.name} left the room.`, ts: ts() };
+      fanoutMap(transcriptSubs, ev);
+      pushTranscript(ev);
+      // Close any SSE streams owned by this member so the leaving client
+      // (and the relay) free their resources promptly.
+      closeMemberTranscriptSubs(memberId, 'left');
     }
     return send(res, 200, { ok: true });
   }
@@ -440,11 +541,19 @@ const server = http.createServer(async (req, res) => {
       if (x.name.toLowerCase() === target.toLowerCase() || x.id === target) { m = x; break; }
     }
     if (!m) return send(res, 404, { error: 'no such member' });
+
     members.delete(m.id);
     memberTokens.delete(m.token);
-    const ev = { kind: 'system', name: '[collab-claw]', text: `${m.name} was removed from the room.`, ts: ts() };
-    fanout(transcriptSubs, ev);
-    pushEvent(ev);
+
+    // Kick the kicked member's transcript SSE BEFORE we broadcast the
+    // system message so they don't see their own kick announcement (and
+    // so they can't keep mirroring the room until their socket happens
+    // to die).
+    closeMemberTranscriptSubs(m.id, 'kicked');
+
+    const ev = { kind: 'system', name: 'collab-claw', text: `${m.name} was removed from the room.`, ts: ts() };
+    fanoutMap(transcriptSubs, ev);
+    pushTranscript(ev);
     log(`kicked name="${m.name}"`);
     return send(res, 200, { ok: true, name: m.name });
   }
@@ -452,8 +561,8 @@ const server = http.createServer(async (req, res) => {
   if (method === 'POST' && path === '/shutdown') {
     if (!authHost(req)) return send(res, 401, { error: 'unauthorized' });
     log('shutdown requested by host; closing in 500ms');
-    const ev = { kind: 'system', name: '[collab-claw]', text: 'Host ended the room.', ts: ts() };
-    fanout(transcriptSubs, ev);
+    const ev = { kind: 'system', name: 'collab-claw', text: 'Host ended the room.', ts: ts() };
+    fanoutMap(transcriptSubs, ev);
     setTimeout(() => process.exit(0), 500);
     return send(res, 200, { ok: true });
   }
@@ -463,7 +572,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   log(`collab-claw relay listening on http://${HOST}:${PORT}`);
-  log(`roomId=${ROOM_ID} hostName="${HOST_NAME}" ringSize=${RING_SIZE}`);
+  log(`roomId=${ROOM_ID} hostName="${HOST_NAME}" ringSize=${RING_SIZE} promptQueueSize=${PROMPT_QUEUE_SIZE}`);
 });
 
 server.on('error', err => {
@@ -474,9 +583,8 @@ server.on('error', err => {
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     log(`received ${sig}, closing ${promptSubs.size + transcriptSubs.size} SSE connections`);
-    for (const r of [...promptSubs, ...transcriptSubs]) {
-      try { r.end(); } catch {}
-    }
+    for (const [r] of promptSubs) { try { r.end(); } catch {} }
+    for (const [r] of transcriptSubs) { try { r.end(); } catch {} }
     server.close(() => process.exit(0));
   });
 }

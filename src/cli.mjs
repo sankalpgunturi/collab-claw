@@ -3,7 +3,7 @@
 // Subcommands:
 //
 //   collab-claw set-name <name>        — store your display name
-//   collab-claw host                   — start a room (used by plugin's bin/host)
+//   collab-claw host                   — start a room (used by plugin's bin/collab-claw-host)
 //   collab-claw end                    — end your hosted room
 //   collab-claw join <url>             — join a room as a teammate (TUI)
 //   collab-claw leave                  — leave the current room

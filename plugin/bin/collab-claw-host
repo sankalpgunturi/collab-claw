@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# bin/host — invoked by the /collab-claw:host skill via Bash.
-# Forwards to `collab-claw host`.
+# bin/collab-claw-host — invoked by the /collab-claw:host skill via Bash.
+# Forwards to `collab-claw host`. Renamed from generic `host` to avoid
+# colliding with the system DNS utility on PATH.
 
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_resolve.sh"

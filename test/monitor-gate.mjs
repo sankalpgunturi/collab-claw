@@ -1,6 +1,9 @@
 // test/monitor-gate.mjs — verify the monitor session-state gate.
 //
-//   Negative control: session.json absent → no event reaches monitor stdout.
+//   Negative control: session.json absent → no event reaches monitor stdout
+//                     while the gate is closed. (Prompts may still be queued
+//                     by the relay for replay when the gate later opens —
+//                     that's intentional and covered by regressions.mjs.)
 //   Positive control: write session.json (mode=host) → monitor wakes up,
 //                     opens SSE, and emits incoming prompts to stdout.
 //   Mid-stream close: delete session.json while a prompt arrives → monitor

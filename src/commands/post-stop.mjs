@@ -1,7 +1,14 @@
-// post-stop — host-only: read a Stop hook input on stdin (which contains
-// transcript_path), parse the JSONL transcript, find the last assistant
-// message, and post its concatenated text content to /events as a
-// `response` event.
+// post-stop — host-only: read a Stop hook input on stdin and post the last
+// assistant message to /events as a `response` event so joiners see it.
+//
+// Resolution order, fast-to-robust:
+//   1. `input.last_assistant_message` — Claude Code provides this directly
+//      in the Stop hook input as of recent versions. When present, this is
+//      the cheapest, most reliable source of truth.
+//   2. Parse the JSONL transcript at `input.transcript_path` (tail-read,
+//      handle several transcript shapes seen in Claude Code 2.x). This
+//      stays as a fallback for older Claude Code builds and for any case
+//      where (1) is missing/empty.
 //
 // Fail-open: any error → exit 0. Never block the host's Claude turn.
 
@@ -17,10 +24,22 @@ export async function run(args) {
   const raw = await readStdin();
   let input;
   try { input = JSON.parse(raw); } catch { return 0; }
-  const tp = input && input.transcript_path;
-  if (!tp || !existsSync(tp)) return 0;
 
-  const text = extractLastAssistantText(tp);
+  let text = '';
+
+  if (input && typeof input.last_assistant_message === 'string') {
+    text = input.last_assistant_message.trim();
+  } else if (input && input.last_assistant_message && typeof input.last_assistant_message === 'object') {
+    text = pickAssistantText({ role: 'assistant', content: input.last_assistant_message.content ?? input.last_assistant_message });
+  }
+
+  if (!text) {
+    const tp = input && input.transcript_path;
+    if (tp && existsSync(tp)) {
+      text = extractLastAssistantText(tp);
+    }
+  }
+
   if (!text) return 0;
 
   const cfg = readConfig();

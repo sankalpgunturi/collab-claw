@@ -1,8 +1,9 @@
-# HANDOFF — collab-claw v0.1.0
+# HANDOFF — collab-claw v0.1.1
 
-Status: **shipped**. v1 is live at `github.com/sankalpgunturi/collab-claw`,
-all four test suites pass (47 cases), and the marketplace install path
-is verified.
+Status: **shipped + hardened**. v1 is live at
+`github.com/sankalpgunturi/collab-claw`. All five test suites pass (70
+cases). The marketplace install path is verified. The eight findings
+from the v1 review are all resolved — see "Review fixes (v0.1.1)" below.
 
 ## What you can do right now
 
@@ -48,11 +49,62 @@ collab-claw end        # host tears down the room
 collab-claw kick Eve   # host removes a member
 ```
 
+## Review fixes (v0.1.1)
+
+Eight findings, all addressed:
+
+1. **Joiner prompts no longer drop during monitor reconnect windows.**
+   The relay queues prompts with monotonic seq numbers, and the host
+   monitor uses standard SSE `Last-Event-ID` to resume from where it
+   left off. Prompts that arrive while no monitor is connected are
+   replayed as soon as one connects. (`#1` in `test/regressions.mjs`)
+
+2. **Single host-monitor subscriber is enforced server-side.** A new
+   `/prompt-stream` connect evicts any existing one (last-writer-wins),
+   so a stale post-`/plugin reload` monitor can't double-deliver
+   prompts to Claude. The monitor also keeps a PID-file lock at
+   `~/.collab-claw/monitor.pid` as defense in depth. (`#2`)
+
+3. **Kicked members' transcript SSE is closed by the relay.** The
+   transcript-stream subscriber map now stores `(res, memberId)`, so
+   `/kicks` and `/leaves` find and end exactly that member's open
+   streams. The joiner TUI also detects 401 on reconnect and exits
+   cleanly. (`#3`)
+
+4. **Join-request names are validated server-side** with the same
+   regex the CLI uses (1–32 chars, alphanumeric/space/_/-). System
+   announcements emit `kind=system` with NO `name` field; the monitor
+   renders them as `[collab-claw] <text>` (single brackets), matching
+   what the host SKILL teaches Claude. The earlier
+   `[[collab-claw]]: ...` regression is fixed. (`#4a`, `#4b`)
+
+5. **Multiline joiner prompts arrive as one notification.** The
+   monitor escapes `\n` to a literal `\n` sequence before writing to
+   stdout, so Claude Code's monitor framework attributes the whole
+   prompt to one named teammate. (`#5`)
+
+6. **Plugin shims renamed to unique names** (`collab-claw-host`,
+   `collab-claw-end`, etc.) so they don't collide with system
+   binaries like `host` (DNS). SKILLs and `allowed-tools:
+   Bash(collab-claw-X:*)` updated accordingly.
+
+7. **Stop hook prefers `last_assistant_message` from the hook input**
+   when present, falling back to JSONL transcript parsing only when
+   needed.
+
+8. **`prompt-submit` no longer depends on jq/sed.** The hook pipes
+   stdin straight into `collab-claw post-prompt --from-hook`, which
+   uses `JSON.parse` to extract the prompt. Robust on multiline and
+   quote-escaped input.
+
 ## What's known to work (verified by tests)
 
-- **Relay**: 12 routes, bearer auth (host token / member token /
-  request-id / room secret), SSE keepalives, ring buffer for backfill,
-  proper 401/404/409 handling. (`test/smoke.mjs`, 21 cases)
+- **Relay**: 12 user-facing routes plus `/healthz`, `/info`, and a
+  test-only `/debug/requests`. Bearer auth (host token / member
+  token / request-id / room secret), SSE keepalives, ring buffer for
+  backfill, prompt queue with `Last-Event-ID` replay,
+  single-subscriber `/prompt-stream`, proper 401/404/409 handling.
+  (`test/smoke.mjs` 21 cases + `test/regressions.mjs` 23 cases)
 
 - **Pairing handshake**: joiner POSTs `/join-requests` with the room
   secret → long-polls `/wait` → host approves via host token →
@@ -80,6 +132,10 @@ collab-claw kick Eve   # host removes a member
 - **TUI plain mode**: when stdin/stdout aren't TTYs, the joiner CLI
   falls back to readline prompts and plain-text event rendering.
   (`test/tui-plain.mjs`, 3 cases)
+
+- **Regression coverage** for the eight v0.1.1 review fixes — queue
+  replay, singleton, kicked SSE close, name validation, system
+  format, multiline encoding. (`test/regressions.mjs`, 23 cases)
 
 - **Marketplace install path**: a fresh `git clone` of the published
   repo has the right layout, executable bits on all bin/ scripts, and
@@ -149,7 +205,7 @@ collab-claw kick Eve   # host removes a member
 
 ```bash
 cd ~/Repositories/collab-claw
-npm test                 # 47/47 should pass
+npm test                 # 70/70 should pass
 
 # Manual sanity:
 npm link                 # ensure global `collab-claw` is on PATH

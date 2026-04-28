@@ -1,6 +1,6 @@
 {
   "name": "collab-claw",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pair-program with one Claude across multiple laptops. A Claude Code plugin + CLI for multi-human collaboration on a single Claude session.",
   "type": "module",
   "bin": {
@@ -8,11 +8,12 @@
   },
   "main": "./src/cli.mjs",
   "scripts": {
-    "test": "node test/smoke.mjs && node test/e2e-cli.mjs && node test/monitor-gate.mjs && node test/tui-plain.mjs",
+    "test": "node test/smoke.mjs && node test/e2e-cli.mjs && node test/monitor-gate.mjs && node test/tui-plain.mjs && node test/regressions.mjs",
     "test:smoke": "node test/smoke.mjs",
     "test:e2e": "node test/e2e-cli.mjs",
     "test:gate": "node test/monitor-gate.mjs",
     "test:tui": "node test/tui-plain.mjs",
+    "test:regressions": "node test/regressions.mjs",
     "start": "node ./bin/collab-claw"
   },
   "engines": {

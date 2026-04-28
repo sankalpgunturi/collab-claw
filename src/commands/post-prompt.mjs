@@ -1,19 +1,36 @@
 // post-prompt — host-only: forward a host's typed prompt to the relay so
 // joiners see it in their transcript stream.
 //
-// Called from the UserPromptSubmit hook with the prompt text on argv (or
-// stdin). The hook itself is fail-open: errors here exit 0 so we never
-// block the host's local Claude.
+// Two invocation modes:
+//   - args:        `collab-claw post-prompt <text words...>` (legacy/manual)
+//   - hook stdin:  `collab-claw post-prompt --from-hook` reads stdin as the
+//                  raw JSON Claude Code passes to UserPromptSubmit and
+//                  extracts `.prompt` via JSON.parse — no jq/sed regex.
+//   - bare stdin:  if no args and no flag, treat stdin as raw prompt text.
+//
+// Fail-open: errors exit 0 so we never block the host's local Claude.
 
 import { readSession, readConfig } from '../state.mjs';
 
 export async function run(args) {
   const s = readSession();
-  if (!s || s.mode !== 'host') return 0; // not hosting, no-op
+  if (!s || s.mode !== 'host') return 0;
+
+  const fromHook = args.includes('--from-hook');
+  const positional = args.filter(a => !a.startsWith('--'));
 
   let text = '';
-  if (args.length > 0) {
-    text = args.join(' ');
+  if (positional.length > 0) {
+    text = positional.join(' ');
+  } else if (fromHook) {
+    const raw = await readStdin();
+    try {
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj.prompt === 'string') text = obj.prompt;
+    } catch {
+      // Malformed hook input → fail-open, don't crash.
+      return 0;
+    }
   } else {
     text = await readStdin();
   }
@@ -32,7 +49,7 @@ export async function run(args) {
       },
       body: JSON.stringify({ kind: 'prompt', name, text }),
     });
-  } catch {} // fail-open
+  } catch {}
   return 0;
 }
 
