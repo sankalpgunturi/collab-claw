@@ -1,0 +1,11 @@
+{
+  "name": "collab-claw-spike-a",
+  "owner": { "name": "sankalpgunturi" },
+  "plugins": [
+    {
+      "name": "collab-claw-spike-a",
+      "source": "./plugin",
+      "description": "Spike A — verify a marketplace-installed plugin's UserPromptSubmit hook fires and receives the prompt body."
+    }
+  ]
+}

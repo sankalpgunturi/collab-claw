@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Spike B — the "Bash command" the SKILL runs.
+# It does no real work; just prints a banner the SKILL renders verbatim
+# so the user (and Claude) sees that hosting started, plus where to drop
+# trigger files for the manual-fire test cases.
+
+set -uo pipefail
+
+DATA="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/data/collab-claw-spike-b}"
+TRIGGERS="$DATA/triggers"
+mkdir -p "$TRIGGERS" 2>/dev/null || true
+
+cat <<EOF
+[collab-claw-spike-b] hosting (test fixture)
+
+The host monitor will start now and emit:
+  - [Sankalp]: ...   (after ~30s)
+  - [Abhinav]: ...   (after ~60s)
+
+For the long-session drift test (T4) and burst test (T6), drop trigger files into:
+  $TRIGGERS
+
+  charlie.fire   →  emits "[Charlie]: please add a docstring to whatever you wrote last"
+  burst.fire     →  emits two lines 2s apart  ([Dana]: ..., [Eve]: ...)
+  quit           →  monitor exits
+
+  e.g.   touch $TRIGGERS/charlie.fire
+
+Monitor activity log: $DATA/monitor.log
+EOF

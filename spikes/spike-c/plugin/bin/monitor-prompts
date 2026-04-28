@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# bin/monitor-prompts — Spike C: production-shape session-gated SSE consumer.
+#
+# Started by Claude Code at every session start (top-level `monitors` array
+# in plugin.json with no `when` field, so always-on).
+#
+# The session-state gate is checked in TWO places:
+#
+#   1. Outer loop: before opening any SSE connection. If the gate is closed,
+#      we just sleep — no upstream traffic, no subscription.
+#
+#   2. Inner loop, per-line: before every emit. If the gate flipped closed
+#      mid-stream (e.g. user ended the room while events were in flight),
+#      we DROP the incoming event so it never reaches Claude.
+#
+# The SSE connection is also capped at 30s of wall time (--max-time). That
+# ensures a closed-gate state can't "linger" indefinitely on a quiet stream;
+# every reconnect is a fresh gate check.
+#
+# Both checks together prove the negative control: removing session.json
+# guarantees nothing reaches Claude, regardless of relay activity.
+#
+# No reliance on $CLAUDE_PLUGIN_DATA or $CLAUDE_PLUGIN_ROOT (Spike B F3:
+# both env vars are unset in the monitor child process).
+
+set -uo pipefail
+
+SESSION="$HOME/.collab-claw/session.json"
+LOG_DIR="$HOME/.claude/data/collab-claw-spike-c"
+LOG_FILE="$LOG_DIR/monitor.log"
+
+mkdir -p "$LOG_DIR"
+
+log() {
+  echo "[$(date -u +%FT%TZ)] $*" >> "$LOG_FILE"
+}
+
+gate_open() {
+  [[ -f "$SESSION" ]] \
+    && jq -e '.mode == "host" and (.roomId | type == "string") and (.roomId | length > 0)' \
+       "$SESSION" >/dev/null 2>&1
+}
+
+log "========== monitor started =========="
+log "pid=$$ session=$SESSION"
+
+while :; do
+  if gate_open; then
+    RELAY=$(jq -r '.relayUrl' "$SESSION")
+    TOKEN=$(jq -r '.hostToken' "$SESSION")
+
+    log "gate=open relay=$RELAY connecting SSE (max 30s)"
+
+    curl -fsSN --max-time 30 \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Accept: text/event-stream" \
+      "$RELAY/prompt-stream" 2>>"$LOG_FILE" \
+    | while IFS= read -r line; do
+        [[ "$line" == data:* ]] || continue
+        payload=${line#data: }
+
+        if ! gate_open; then
+          log "DROP: gate closed mid-stream; ignoring incoming event"
+          continue
+        fi
+
+        name=$(printf '%s' "$payload" | jq -r '.name // ""' 2>/dev/null)
+        text=$(printf '%s' "$payload" | jq -r '.text // ""' 2>/dev/null)
+        if [[ -n "$name" && -n "$text" ]]; then
+          log "EMIT: [$name]: $text"
+          echo "[$name]: $text"
+        else
+          log "skipped malformed payload: $payload"
+        fi
+      done
+
+    log "SSE disconnected; will recheck gate after 5s"
+  else
+    log "gate=closed (session.json absent or mode!=host); idling 5s"
+  fi
+
+  sleep 5
+done

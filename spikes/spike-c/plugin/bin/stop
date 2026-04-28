@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# bin/stop — Spike C: Stop hook. POSTs the host's last assistant message
+# to the relay's /events endpoint, where it's fanned out to joiners on
+# /transcript-stream.
+#
+# Hook input on stdin: { transcript_path, session_id, hook_event_name, ... }.
+# We read the JSONL transcript at $transcript_path, find the last assistant
+# message, extract its text content, and POST it.
+#
+# Fail-open: any error → log + exit 0. Never block the host's Claude turn.
+
+set -uo pipefail
+
+LOG_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/data/collab-claw-spike-c}"
+LOG_FILE="$LOG_DIR/hook.log"
+mkdir -p "$LOG_DIR"
+
+log() { echo "[$(date -u +%FT%TZ)] stop: $*" >> "$LOG_FILE"; }
+
+INPUT=$(cat)
+TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // ""' 2>/dev/null)
+
+if [[ -z "$TRANSCRIPT" || ! -f "$TRANSCRIPT" ]]; then
+  log "no transcript_path in hook input; exiting clean"
+  exit 0
+fi
+
+SESSION_FILE="$HOME/.collab-claw/session.json"
+if [[ ! -f "$SESSION_FILE" ]]; then
+  log "no session.json; exiting clean"
+  exit 0
+fi
+
+MODE=$(jq -r '.mode // ""' "$SESSION_FILE" 2>/dev/null)
+if [[ "$MODE" != "host" ]]; then
+  log "mode=$MODE (not host); exiting clean"
+  exit 0
+fi
+
+RELAY=$(jq -r '.relayUrl' "$SESSION_FILE")
+TOKEN=$(jq -r '.hostToken' "$SESSION_FILE")
+HOST_NAME="${COLLAB_CLAW_HOST_NAME:-Surya}"
+
+# Walk the JSONL transcript backwards (BSD `tail -r` works on macOS) and grab
+# the first assistant message's concatenated text content. Different Claude
+# Code versions structure messages slightly differently; try both shapes.
+LAST_TEXT=$(tail -r "$TRANSCRIPT" 2>/dev/null \
+  | while IFS= read -r line; do
+      txt=$(printf '%s' "$line" | jq -r '
+        (.message.content // .content // []) as $c
+        | if (.type // .role // "") == "assistant" then
+            ($c | if type=="array"
+                  then (map(select(.type=="text") | .text) | join("\n"))
+                  else (. // "")
+                  end)
+          else empty end' 2>/dev/null)
+      if [[ -n "$txt" ]]; then
+        printf '%s' "$txt"
+        break
+      fi
+    done)
+
+if [[ -z "$LAST_TEXT" ]]; then
+  log "could not extract assistant text from $TRANSCRIPT; exiting clean"
+  exit 0
+fi
+
+PAYLOAD=$(jq -nc \
+  --arg name "$HOST_NAME" \
+  --arg text "$LAST_TEXT" \
+  '{kind:"response", name:$name, text:$text}')
+
+CURL_OUT=$(curl -fsS -m 5 \
+  -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD" \
+  "$RELAY/events" 2>&1)
+CURL_RC=$?
+
+log "POST /events rc=$CURL_RC bytes=${#LAST_TEXT} resp=${CURL_OUT:0:120}"
+
+exit 0

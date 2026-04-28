@@ -1,0 +1,11 @@
+{
+  "name": "collab-claw-spike-b",
+  "owner": { "name": "sankalpgunturi" },
+  "plugins": [
+    {
+      "name": "collab-claw-spike-b",
+      "source": "./plugin",
+      "description": "Spike B — verify the production-path host monitor (on-skill-invoke:host) wakes idle Claude on '[Name]: …' lines and that SKILL-body host instructions persist across the session."
+    }
+  ]
+}

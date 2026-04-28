@@ -1,0 +1,11 @@
+{
+  "name": "collab-claw-spike-c",
+  "owner": { "name": "sankalpgunturi" },
+  "plugins": [
+    {
+      "name": "collab-claw-spike-c",
+      "source": "./plugin",
+      "description": "Spike C \u2014 plumbing proof for the relay/CLI loop. Production-shape session-gated host monitor + Stop hook + bin/host skill. Confirms (a) the negative control (gate closed \u2192 nothing reaches Claude) and (b) the positive path (gate open \u2192 prompt wakes Claude \u2192 response streams back to joiner)."
+    }
+  ]
+}

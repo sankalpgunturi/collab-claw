@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# bin/host — Spike C: opens the session-state gate for the always-on monitor.
+#
+# Writes ~/.collab-claw/session.json so the always-on monitor (running via the
+# plugin manifest) starts streaming from the relay's /prompt-stream.
+# Prints a verbose banner so the SKILL surfaces the result into Claude's
+# transcript verbatim.
+
+set -uo pipefail
+
+RELAY_URL="${COLLAB_CLAW_RELAY:-http://127.0.0.1:7475}"
+HOST_TOKEN="${COLLAB_CLAW_TOKEN:-spike-c-shared-token}"
+ROOM_ID="${COLLAB_CLAW_ROOM:-spike-c-room}"
+
+mkdir -p "$HOME/.collab-claw"
+SESSION_FILE="$HOME/.collab-claw/session.json"
+
+cat > "$SESSION_FILE" <<EOF
+{
+  "mode": "host",
+  "roomId": "$ROOM_ID",
+  "relayUrl": "$RELAY_URL",
+  "hostToken": "$HOST_TOKEN",
+  "createdAt": "$(date -u +%FT%TZ)"
+}
+EOF
+chmod 600 "$SESSION_FILE"
+
+cat <<EOF
+[collab-claw-spike-c] hosting
+
+session.json   : $SESSION_FILE
+relayUrl       : $RELAY_URL
+roomId         : $ROOM_ID
+hostToken      : (set)
+monitor.log    : $HOME/.claude/data/collab-claw-spike-c/monitor.log
+
+Within ~5 seconds the always-on host monitor should detect the session-state
+flip, open SSE to $RELAY_URL/prompt-stream, and start delivering joiner
+prompts as [Name]: <text> notifications.
+
+(Spike C: keep this Claude session idle. The joiner will POST a prompt; you
+should wake up and respond. Your Stop hook will POST your response back to
+the relay so the joiner sees it.)
+EOF

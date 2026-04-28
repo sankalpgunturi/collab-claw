@@ -1,0 +1,12 @@
+{
+  "name": "collab-claw-spike-a",
+  "version": "0.0.1",
+  "description": "Spike A — UserPromptSubmit broadcast verification.",
+  "author": {
+    "name": "collab-claw",
+    "url": "https://github.com/sankalpgunturi/collab-claw-spike-a"
+  },
+  "homepage": "https://github.com/sankalpgunturi/collab-claw-spike-a",
+  "repository": "https://github.com/sankalpgunturi/collab-claw-spike-a",
+  "license": "MIT"
+}

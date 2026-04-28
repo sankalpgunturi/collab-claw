@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Spike B — host plugin monitor body.
+#
+# Phase 1 (time-emit, deterministic):
+#   t=30s  →  [Sankalp]: please write a hello-world Python script
+#   t=60s  →  [Abhinav]: now translate that to Rust
+#
+# Phase 2 (trigger-file watch, manual):
+#   poll TRIGGERS/ every 2s for charlie.fire | burst.fire | quit.
+#
+# Output goes to stdout (which the plugin monitor pipes into Claude as
+# notifications). Diagnostics and timestamps go to monitor.log.
+
+set -uo pipefail
+
+DATA="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/data/collab-claw-spike-b}"
+TRIGGERS="$DATA/triggers"
+LOG="$DATA/monitor.log"
+mkdir -p "$TRIGGERS" 2>/dev/null || true
+: > "$LOG.lock" 2>/dev/null || true
+
+log() {
+  local ts
+  ts=$(date -u +%FT%TZ)
+  printf '[%s] %s\n' "$ts" "$*" >> "$LOG"
+}
+
+emit() {
+  local line="$1"
+  log "EMIT: $line"
+  printf '%s\n' "$line"
+}
+
+log "========== monitor started =========="
+log "pid=$$"
+log "CLAUDE_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT:-<unset>}"
+log "CLAUDE_PLUGIN_DATA=${CLAUDE_PLUGIN_DATA:-<unset>}"
+log "TRIGGERS=$TRIGGERS"
+
+# --- Phase 1: time-emit two scheduled prompts ---
+log "phase 1: scheduled emit in 30s"
+sleep 30
+emit "[Sankalp]: please write a hello-world Python script"
+log "phase 1: scheduled emit in 30s (next)"
+sleep 30
+emit "[Abhinav]: now translate that to Rust"
+log "phase 1 complete; entering trigger watch loop"
+
+# --- Phase 2: trigger-file watch loop ---
+while true; do
+  if [[ -f "$TRIGGERS/charlie.fire" ]]; then
+    rm -f "$TRIGGERS/charlie.fire"
+    emit "[Charlie]: please add a docstring to whatever you wrote last"
+  fi
+  if [[ -f "$TRIGGERS/burst.fire" ]]; then
+    rm -f "$TRIGGERS/burst.fire"
+    emit "[Dana]: write me a one-liner that prints the time"
+    sleep 2
+    emit "[Eve]: same but in JavaScript"
+  fi
+  if [[ -f "$TRIGGERS/quit" ]]; then
+    rm -f "$TRIGGERS/quit"
+    log "quit trigger received; exiting watch loop"
+    break
+  fi
+  sleep 2
+done
+
+# Portable infinite hold so the monitor's stdout pipe stays open
+# (in case Claude Code expects a long-lived monitor process).
+log "watch loop exited; holding open"
+while true; do sleep 3600; done

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "spike-b-prompts",
+    "command": "${CLAUDE_PLUGIN_ROOT}/bin/spike-b-emit",
+    "description": "Joiner prompts arriving in this collab-claw room. Each line is formatted '[Name]: <text>' and should be treated as a new user request from that named teammate.",
+    "when": "on-skill-invoke:host"
+  }
+]

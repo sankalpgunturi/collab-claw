@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Spike A — UserPromptSubmit hook entry point.
+#
+# Reads the JSON event Claude Code sent on stdin, appends it to a debug log,
+# and POSTs the entire event body to the local listener on 127.0.0.1:9999.
+#
+# Always exits 0 so Claude Code processes the user's prompt normally,
+# regardless of whether the listener is up.
+
+set -uo pipefail
+
+input=$(cat)
+
+log_dir="${CLAUDE_PLUGIN_DATA:-${HOME}/.claude/data/collab-claw-spike-a}"
+mkdir -p "$log_dir" 2>/dev/null || true
+log_file="$log_dir/hook.log"
+
+{
+  printf '\n=== hook fire @ %s ===\n' "$(date -u +%FT%TZ)"
+  printf 'CLAUDE_PLUGIN_ROOT=%s\n' "${CLAUDE_PLUGIN_ROOT:-<unset>}"
+  printf 'CLAUDE_PLUGIN_DATA=%s\n' "${CLAUDE_PLUGIN_DATA:-<unset>}"
+  printf 'input:\n%s\n' "$input"
+} >> "$log_file" 2>/dev/null || true
+
+curl_exit=0
+curl_output=$(
+  curl -sS --max-time 2 \
+    -X POST \
+    -H 'Content-Type: application/json' \
+    --data-binary "$input" \
+    http://127.0.0.1:9999/test 2>&1
+) || curl_exit=$?
+
+{
+  printf 'curl_exit=%s\n' "$curl_exit"
+  printf 'curl_output=%s\n' "$curl_output"
+} >> "$log_file" 2>/dev/null || true
+
+exit 0

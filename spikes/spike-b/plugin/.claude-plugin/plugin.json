@@ -1,0 +1,20 @@
+{
+  "name": "collab-claw-spike-b",
+  "version": "0.0.3",
+  "description": "Spike B — production-path host monitor wakeup verification.",
+  "author": {
+    "name": "collab-claw",
+    "url": "https://github.com/sankalpgunturi/collab-claw-spike-b"
+  },
+  "homepage": "https://github.com/sankalpgunturi/collab-claw-spike-b",
+  "repository": "https://github.com/sankalpgunturi/collab-claw-spike-b",
+  "license": "MIT",
+  "monitors": [
+    {
+      "name": "spike-b-prompts",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/spike-b-emit",
+      "description": "Joiner prompts arriving in this collab-claw room. Each line is formatted '[Name]: <text>' and should be treated as a new user request from that named teammate.",
+      "when": "always"
+    }
+  ]
+}

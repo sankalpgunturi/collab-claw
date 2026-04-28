@@ -1,0 +1,19 @@
+{
+  "name": "collab-claw-spike-c",
+  "version": "0.0.1",
+  "description": "Spike C \u2014 production-shape plumbing test (relay + monitor + Stop hook + bin/host skill).",
+  "author": {
+    "name": "collab-claw",
+    "url": "https://github.com/sankalpgunturi/collab-claw-spike-c"
+  },
+  "homepage": "https://github.com/sankalpgunturi/collab-claw-spike-c",
+  "repository": "https://github.com/sankalpgunturi/collab-claw-spike-c",
+  "license": "MIT",
+  "monitors": [
+    {
+      "name": "spike-c-monitor",
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/monitor-prompts",
+      "description": "Joiner prompts arriving in the active collab-claw room. Each line is formatted '[Name]: <text>' and should be treated as a new user request from that named teammate."
+    }
+  ]
+}
