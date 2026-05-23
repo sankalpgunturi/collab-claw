@@ -56,6 +56,9 @@
 
 import http from 'node:http';
 import { URL } from 'node:url';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { token32 } from '../util/crypto.mjs';
 import { ts } from '../util/log.mjs';
 
@@ -67,6 +70,15 @@ const ROOM_ID    = process.env.COLLAB_CLAW_ROOM_ID    || 'default-room';
 const HOST_NAME  = process.env.COLLAB_CLAW_HOST_NAME  || 'host';
 const RING_SIZE  = Number(process.env.COLLAB_CLAW_RING || 200);
 const PROMPT_QUEUE_SIZE = Number(process.env.COLLAB_CLAW_PROMPT_QUEUE || 200);
+
+// Persistence: append every transcript event to ~/.collab-claw/log/<roomId>.jsonl.
+// Off when COLLAB_CLAW_LOG=off (tests / privacy). Override the dir via
+// COLLAB_CLAW_LOG_DIR (used by tests to redirect into a tmp dir without
+// rewriting $HOME).
+const LOG_ENABLED = (process.env.COLLAB_CLAW_LOG || 'on').toLowerCase() !== 'off';
+const LOG_DIR = process.env.COLLAB_CLAW_LOG_DIR || join(homedir(), '.collab-claw', 'log');
+const LOG_FILE = join(LOG_DIR, `${ROOM_ID}.jsonl`);
+let logDirReady = false;
 
 if (!HOST_TOKEN || !ROOM_SECRET) {
   console.error('relay: COLLAB_CLAW_HOST_TOKEN and COLLAB_CLAW_ROOM_SECRET env vars are required');
@@ -205,9 +217,25 @@ function fanoutMap(map, payload, seq) {
   return n;
 }
 
+function persistEvent(ev) {
+  if (!LOG_ENABLED) return;
+  try {
+    if (!logDirReady) {
+      mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
+      logDirReady = true;
+    }
+    appendFileSync(LOG_FILE, JSON.stringify(ev) + '\n', { mode: 0o600 });
+  } catch (e) {
+    // Log-write failures should never break the live room. Surface once
+    // in case the user has set debug, then continue.
+    if (process.env.COLLAB_CLAW_DEBUG) console.error('persist:', e.message);
+  }
+}
+
 function pushTranscript(ev) {
   transcriptRing.push(ev);
   if (transcriptRing.length > RING_SIZE) transcriptRing.shift();
+  persistEvent(ev);
 }
 
 function enqueuePrompt(ev) {
@@ -266,7 +294,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       roomId: ROOM_ID,
       hostName: HOST_NAME,
-      version: '0.1.2',
+      version: '0.2.0',
     });
   }
 
@@ -579,6 +607,7 @@ const server = http.createServer(async (req, res) => {
     log('shutdown requested by host; closing in 500ms');
     const ev = { kind: 'system', name: 'collab-claw', text: 'Host ended the room.', ts: ts() };
     fanoutMap(transcriptSubs, ev);
+    pushTranscript(ev);
     setTimeout(() => process.exit(0), 500);
     return send(res, 200, { ok: true });
   }
