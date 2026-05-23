@@ -1,4 +1,4 @@
-# Contributing to collab-claw
+# Contributing to CollabClaw
 
 Thanks for considering a contribution! Bug reports, feature ideas,
 docs fixes, and PRs are all welcome.
