@@ -35,12 +35,16 @@ You need **Node.js ≥ 18** on every machine. The host also needs
 ### 1. Install the CLI everywhere (host + joiners)
 
 ```bash
-# from a git checkout (works today):
-git clone https://github.com/sankalpgunturi/collab-claw.git
-cd collab-claw
-npm link            # installs `collab-claw` globally
+# npm (the easy one):
+npm install -g collab-claw
 
-# (npm publish coming; once live: npm install -g collab-claw)
+# Homebrew (macOS / Linux):
+brew tap sankalpgunturi/tap
+brew install collab-claw
+
+# Or from source:
+git clone https://github.com/sankalpgunturi/collab-claw.git
+cd collab-claw && npm link
 ```
 
 ### 2. Install the host plugin (host only)
@@ -240,20 +244,28 @@ npm run test:gate  # monitor session-state gate (negative + positive)
 npm run test:tui   # joiner TUI in plain mode
 ```
 
-The test suite covers 47 cases across the four scenarios.
+The test suite covers 102 cases across six scenarios.
 
-## Known limitations (v1)
+## What's new in v0.2.0
+
+- **Cross-network** via `collab-claw expose` — wraps a Cloudflare quick
+  tunnel so teammates on other networks can join without you setting up
+  Cloudflared by hand.
+- **Transcript persistence** — every event is appended to
+  `~/.collab-claw/log/<roomId>.jsonl` (set `COLLAB_CLAW_LOG=off` to
+  disable). Replay with `collab-claw history [roomId]`.
+- **Reconnect UX** — the joiner TUI shows `● live` /
+  `● reconnecting…` / `● host offline (last seen Xm ago)` in the
+  status bar, with exponential backoff and a one-line "reconnected"
+  notice on recovery.
+- **Markdown in responses** — prompts and responses get a tasteful
+  subset (`**bold**`, `*italic*`, `` `inline code` ``, fenced
+  ```` ``` blocks ```` ).
+
+## Known limitations
 
 - **Single relay = single host machine.** If the host's laptop sleeps,
-  the room dies. v1.1 will add reconnection.
-- **LAN-first.** Cross-network requires manually tunneling the relay
-  port. `collab-claw expose` (cloudflared wrapper) is planned.
-- **No persistence.** Transcripts aren't saved to disk; only the last
-  ~200 events are retained in memory for backfill. v1.1 will add an
-  optional `~/.collab-claw/log/` write.
-- **Plain-text events.** The TUI doesn't render markdown yet. Code
-  blocks come through as their raw text. v1.1 will add a tasteful
-  markdown subset.
+  the room dies (joiners auto-reconnect when it returns).
 - **Same Claude Code version.** Hosts running Claude Code older than
   2.1.105 won't have plugin monitors at all (the always-on monitor
   trigger). Upgrade if `/collab-claw:host` says it's hosting but
