@@ -8,7 +8,7 @@ lives here.
 | [`commands.md`](./commands.md) | Full CLI + slash command reference; cross-network (`expose`); transcript history. |
 | [`architecture.md`](./architecture.md) | How CollabClaw works end-to-end, file tree, key design decisions. |
 | [`configuration.md`](./configuration.md) | Environment variables, local files, what's stored where. |
-| [`testing.md`](./testing.md) | Running the test suite (102 cases across six scenarios). |
+| [`testing.md`](./testing.md) | Running the test suite (101 cases across six scenarios). |
 
 Standard project files live at the repo root:
 [`CONTRIBUTING.md`](../CONTRIBUTING.md),

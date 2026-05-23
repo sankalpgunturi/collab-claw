@@ -1,6 +1,6 @@
 # Testing
 
-CollabClaw has 102 test cases across six scenario files. Everything
+CollabClaw has 101 test cases across six scenario files. Everything
 runs locally — no external services, no network calls. The full
 suite finishes in well under a minute.
 
@@ -25,7 +25,7 @@ npm run test:v11            # v0.2.0 feature coverage
 | `test/monitor-gate.mjs` | 6 | Session-state gate (the Spike C finding): prompts go through ↔ session.json presence. |
 | `test/tui-plain.mjs` | 3 | Plain-mode joiner TUI when stdin/stdout aren't TTYs. |
 | `test/regressions.mjs` | 29 | Every review finding from v0.1.1 + v0.1.2 — queue replay, singleton, kicked SSE close, name validation, system format, stale-system filter, backpressure delivery counting. |
-| `test/v1.1.mjs` | 25 | v0.2.0 features — persistence, history, expose guards, reconnect UX, markdown renderer, log-off. |
+| `test/v1.1.mjs` | 24 | v0.2.0 features — persistence, history, expose guards, reconnect UX, markdown renderer, log-off. |
 
 ## CI
 
