@@ -74,12 +74,22 @@ function spawnRelay(env = {}) {
  *  before letting the caller bind a new relay on the same one. Without this
  *  helper, slow CI runners hit EADDRINUSE on the new relay (which dies
  *  silently with exit 1) while the healthz poll happily satisfies itself
- *  against the still-dying old relay — a confusing false positive. */
-async function killAndWaitExit(child, graceMs = 3000) {
+ *  against the still-dying old relay — a confusing false positive.
+ *  Escalates to SIGKILL if SIGTERM doesn't take effect within graceMs;
+ *  the relay's server.close() can hang waiting for in-flight SSE drains
+ *  on some Node versions (notably 18's undici 5.x). */
+async function killAndWaitExit(child, graceMs = 2000) {
   if (!child) return;
   const exited = new Promise(res => child.on('exit', res));
   try { child.kill('SIGTERM'); } catch {}
-  await Promise.race([exited, wait(graceMs)]);
+  const tag = await Promise.race([
+    exited.then(() => 'exited'),
+    wait(graceMs).then(() => 'timeout'),
+  ]);
+  if (tag === 'timeout') {
+    try { child.kill('SIGKILL'); } catch {}
+    await Promise.race([exited, wait(1000)]);
+  }
   await wait(150); // brief settle so SO_REUSEADDR isn't needed
 }
 

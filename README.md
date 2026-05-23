@@ -49,7 +49,7 @@ delivered to the host's Claude as if they had typed them locally.
 
 ## Install
 
-You need **Node.js ≥ 18** on every machine. The host also needs
+You need **Node.js ≥ 20** on every machine. The host also needs
 **Claude Code** (the `claude` CLI).
 
 ### 1. Install the CLI everywhere (host + joiners)
