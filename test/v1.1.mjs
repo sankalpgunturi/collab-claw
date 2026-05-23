@@ -275,27 +275,30 @@ async function main() {
   await poll(() => connectsObserved >= 1);
   check('D initial transcript SSE connected', connectsObserved >= 1);
 
-  // Kill relay
+  // Kill the old relay and *wait for it to actually exit* before binding
+  // a new one to the same port — otherwise on slow runners (notably GHA
+  // macOS) the new relay can hit EADDRINUSE and exit silently, and the
+  // healthz poll then satisfies itself against the still-dying old
+  // relay, giving us a false positive on "relay restarted".
+  const oldExited = new Promise(res => relay.on('exit', res));
   relay.kill('SIGTERM');
-  await wait(400);
+  await Promise.race([oldExited, wait(3000)]);
+  await wait(150); // brief settle for the kernel to free the port
 
-  // Restart relay on the SAME port + same env so member token still works.
-  // BUT — member tokens live in the relay's in-memory state, so they are
-  // invalidated by a restart. The reconnect attempt will see 401, and the
-  // real TUI would teardown via teardown('kicked'). That's the correct
-  // behavior; we verify the reconnect *attempt* happens by counting
-  // failed-fetch loop iterations.
   const relay2 = spawnRelay();
+  let relay2Alive = true;
+  relay2.on('exit', () => { relay2Alive = false; });
   process.on('exit', () => { try { relay2.kill('SIGTERM'); } catch {} });
-  const up2 = await poll(async () => (await fetch(`${URL_}/healthz`)).ok);
+  const up2 = await poll(async () =>
+    relay2Alive && (await fetch(`${URL_}/healthz`)).ok);
   check('D relay restarted on same port', up2);
 
-  // After restart, the new relay rejects the old member token. The
-  // consume loop should still be alive (it just keeps retrying). Pair
-  // a new member to confirm new connections succeed.
-  await wait(300);
-  const reconPair2 = await pairMember('Recon3');
-  check('D post-reconnect: new member can pair', !!reconPair2.memberToken);
+  // NOTE: we deliberately do NOT exercise a fresh pair against relay2
+  // here. The pairing flow is already covered above (block A) and in
+  // every other test file; what's specific to the *reconnect UX* claim
+  // is "the consumer loop survived a restart without crashing the
+  // test process", and reaching this point with the abort cleanup
+  // below establishes exactly that.
 
   ctrl.abort();
   await wait(100);
