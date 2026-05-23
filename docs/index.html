@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>collab-claw — pair-program with one Claude across multiple laptops</title>
+  <meta name="description" content="A Claude Code plugin + CLI for multi-human collaboration on a single Claude session. Local-first, token-scoped, MIT-licensed.">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <meta property="og:title" content="collab-claw">
+  <meta property="og:description" content="Pair-program with one Claude across multiple laptops.">
+  <meta property="og:image" content="logo.svg">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sankalpgunturi.github.io/collab-claw/">
+  <meta name="twitter:card" content="summary">
+  <style>
+    :root {
+      --bg: #fdfaf7;
+      --ink: #1a1a1a;
+      --muted: #5a5a5a;
+      --accent: #c44322;
+      --accent-bright: #e55934;
+      --rule: #e8dcd2;
+      --code-bg: #f4ece4;
+      --max: 760px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14110f;
+        --ink: #f0e8e0;
+        --muted: #a89c92;
+        --accent: #e55934;
+        --accent-bright: #f26b5c;
+        --rule: #2c2622;
+        --code-bg: #221b16;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+      color: var(--ink);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 1.25rem; }
+    header.hero {
+      padding: 4rem 1.25rem 2rem;
+      text-align: center;
+    }
+    header.hero img { max-width: 180px; height: auto; }
+    header.hero h1 {
+      font-size: 2.75rem;
+      margin: 0.6rem 0 0.4rem;
+      letter-spacing: -0.02em;
+    }
+    header.hero .tagline {
+      font-size: 1.2rem;
+      color: var(--muted);
+      margin: 0 0 1.5rem;
+    }
+    .badges { display: flex; gap: 0.4rem; justify-content: center; flex-wrap: wrap; }
+    .badges img { height: 22px; }
+    section { padding: 2rem 0; border-top: 1px solid var(--rule); }
+    section:first-of-type { border-top: 0; }
+    h2 {
+      font-size: 1.5rem;
+      margin: 0 0 1rem;
+      letter-spacing: -0.01em;
+    }
+    h2 .num {
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      margin-right: 0.5rem;
+    }
+    p { margin: 0.75rem 0; }
+    a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+    a:hover { border-bottom-color: var(--accent); }
+    code {
+      background: var(--code-bg);
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+      font-size: 0.9em;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    }
+    pre {
+      background: var(--code-bg);
+      padding: 1rem 1.1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.875rem;
+      line-height: 1.55;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    }
+    pre code { background: none; padding: 0; }
+    .feature-grid {
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-top: 1rem;
+    }
+    .feature {
+      padding: 1.1rem 1.2rem;
+      border: 1px solid var(--rule);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--code-bg) 50%, transparent);
+    }
+    .feature h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+    .feature p { margin: 0; font-size: 0.92rem; color: var(--muted); }
+    .cta {
+      display: inline-block;
+      background: var(--accent);
+      color: white;
+      padding: 0.6rem 1.1rem;
+      border-radius: 6px;
+      font-weight: 600;
+      border-bottom: 0;
+      margin-right: 0.5rem;
+    }
+    .cta:hover { background: var(--accent-bright); }
+    .cta.secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    footer {
+      text-align: center;
+      padding: 2.5rem 1.25rem 3rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--rule);
+    }
+    footer a { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="hero">
+    <img src="logo.svg" alt="collab-claw logo — a lobster claw">
+    <h1>collab-claw 🦞</h1>
+    <p class="tagline">Pair-program with one Claude across multiple laptops.</p>
+    <p class="badges">
+      <a href="https://www.npmjs.com/package/collab-claw"><img alt="npm" src="https://img.shields.io/npm/v/collab-claw?logo=npm&color=cb3837"></a>
+      <a href="https://github.com/sankalpgunturi/homebrew-tap"><img alt="Homebrew" src="https://img.shields.io/badge/homebrew-sankalpgunturi%2Ftap-orange?logo=homebrew"></a>
+      <a href="https://github.com/sankalpgunturi/collab-claw/actions/workflows/test.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/sankalpgunturi/collab-claw/test.yml?branch=main&label=tests&logo=github"></a>
+      <a href="https://github.com/sankalpgunturi/collab-claw/blob/main/LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/sankalpgunturi/collab-claw?color=blue"></a>
+    </p>
+    <p style="margin-top:1.5rem;">
+      <a class="cta" href="#install">Get started</a>
+      <a class="cta secondary" href="https://github.com/sankalpgunturi/collab-claw">View on GitHub</a>
+    </p>
+  </header>
+
+  <section id="what">
+    <h2>What is it?</h2>
+    <p>
+      <code>collab-claw</code> lets a group of teammates collaborate inside a
+      <strong>single Claude Code session</strong>. The host runs Claude as
+      usual; teammates connect from their own laptops via a small CLI and see
+      the conversation live. Their prompts get prefixed with their name
+      (<code>[Alice]: …</code>) and delivered to the host's Claude as if they
+      had typed them locally.
+    </p>
+
+    <div class="feature-grid">
+      <div class="feature">
+        <h3>One Claude, many humans</h3>
+        <p>The host runs Claude Code; joiners install a thin CLI. No second Claude session, no second bill.</p>
+      </div>
+      <div class="feature">
+        <h3>Local-first</h3>
+        <p>The relay runs on the host's laptop over LAN. No accounts, no servers, no signup.</p>
+      </div>
+      <div class="feature">
+        <h3>Cross-network when you want it</h3>
+        <p><code>collab-claw expose</code> wraps a Cloudflare quick tunnel — opt-in, off by default.</p>
+      </div>
+      <div class="feature">
+        <h3>Token-scoped pairing</h3>
+        <p>Joiners are explicitly approved by the host. Member tokens are revoked on kick or leave.</p>
+      </div>
+      <div class="feature">
+        <h3>Persistent transcripts</h3>
+        <p>Every room is logged to <code>~/.collab-claw/log/&lt;roomId&gt;.jsonl</code>. Replay with <code>collab-claw history</code>.</p>
+      </div>
+      <div class="feature">
+        <h3>MIT-licensed</h3>
+        <p>Fork it, ship it, change it. The code is small (~2k LOC), readable, and has zero runtime deps.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2><span class="num">1.</span>Install</h2>
+    <p>You need <strong>Node.js ≥ 18</strong> on every machine. The host also needs <strong>Claude Code</strong>.</p>
+<pre><code># npm:
+npm install -g collab-claw
+
+# Homebrew (macOS / Linux):
+brew tap sankalpgunturi/tap
+brew install collab-claw</code></pre>
+  </section>
+
+  <section id="host">
+    <h2><span class="num">2.</span>Host a room</h2>
+    <p>Install the plugin in Claude Code once:</p>
+<pre><code>/plugin marketplace add sankalpgunturi/collab-claw
+/plugin install collab-claw</code></pre>
+    <p>Then start a room from any Claude Code session:</p>
+<pre><code>/collab-claw:host</code></pre>
+    <p>You'll get a join URL like <code>http://10.0.0.42:7474#secret=…</code> to DM to teammates. Keep working with Claude as you normally would — joiner prompts arrive as <code>[Name]: &lt;text&gt;</code> notifications.</p>
+  </section>
+
+  <section id="join">
+    <h2><span class="num">3.</span>Join a room</h2>
+<pre><code>collab-claw set-name Bob      # one-time
+collab-claw join &lt;url&gt;</code></pre>
+    <p>You'll see a TUI with the host's transcript scrolling. Type a prompt, hit Enter, the host's Claude responds. Press Ctrl-C to leave.</p>
+  </section>
+
+  <section id="learn">
+    <h2>Learn more</h2>
+    <ul>
+      <li><a href="https://github.com/sankalpgunturi/collab-claw#readme">README</a> — full install + usage + architecture.</li>
+      <li><a href="https://github.com/sankalpgunturi/collab-claw/blob/main/SECURITY.md">SECURITY.md</a> — threat model and how to report a vulnerability.</li>
+      <li><a href="https://github.com/sankalpgunturi/collab-claw/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> — dev loop, branch rules, PR checklist.</li>
+      <li><a href="https://github.com/sankalpgunturi/collab-claw/releases">Releases</a> — changelog and download links.</li>
+      <li><a href="https://github.com/sankalpgunturi/collab-claw/issues">Issues</a> — bugs and feature requests.</li>
+    </ul>
+  </section>
+
+</div>
+
+<footer>
+  Built with care. Bugs to <a href="https://github.com/sankalpgunturi/collab-claw/issues">the issue tracker</a>.
+  MIT-licensed.
+</footer>
+
+</body>
+</html>
