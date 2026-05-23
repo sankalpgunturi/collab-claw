@@ -11,6 +11,8 @@
 //   collab-claw approve <requestId>    — approve a pending join (host)
 //   collab-claw deny <requestId>       — deny a pending join    (host)
 //   collab-claw kick <name>            — remove a member        (host)
+//   collab-claw expose                 — opt-in: cloudflared tunnel for cross-network joiners
+//   collab-claw history [roomId]       — show events from a persisted room log
 //   collab-claw post-prompt <text>     — host-only: post a hook prompt event
 //   collab-claw post-event <kind> <text>  — host-only: post an arbitrary event
 //   collab-claw post-tool <pre|post> <json>  — host-only: post tool event
@@ -42,6 +44,8 @@ Usage:
   collab-claw approve <requestId>
   collab-claw deny <requestId>
   collab-claw kick <name>
+  collab-claw expose
+  collab-claw history [roomId] [--limit=N] [--json]
 
 Plugin-internal (don't run directly unless you know why):
   collab-claw monitor
@@ -106,6 +110,14 @@ export async function main(argv) {
       }
       case 'kick': {
         const { run } = await import('./commands/kick.mjs');
+        return run(args);
+      }
+      case 'expose': {
+        const { run } = await import('./commands/expose.mjs');
+        return run(args);
+      }
+      case 'history': {
+        const { run } = await import('./commands/history.mjs');
         return run(args);
       }
       case 'monitor': {
