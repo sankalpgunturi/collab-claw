@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 200" width="240" height="200" role="img" aria-label="collab-claw lobster claw logo">
+  <title>collab-claw</title>
+  <defs>
+    <linearGradient id="claw-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F26B5C"/>
+      <stop offset="100%" stop-color="#C44322"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#claw-grad)" stroke="#7A1F0A" stroke-width="3" stroke-linejoin="round">
+    <!-- knuckle / body -->
+    <ellipse cx="78" cy="100" rx="62" ry="58"/>
+    <!-- upper finger -->
+    <path d="M 110 55 Q 180 42 215 75 Q 218 92 198 94 Q 172 94 145 98 Q 124 80 110 55 Z"/>
+    <!-- lower finger -->
+    <path d="M 110 145 Q 180 158 215 125 Q 218 108 198 106 Q 172 106 145 102 Q 124 120 110 145 Z"/>
+  </g>
+  <!-- joint dot -->
+  <circle cx="78" cy="100" r="6" fill="#7A1F0A"/>
+  <!-- highlight -->
+  <ellipse cx="55" cy="75" rx="14" ry="9" fill="#FFFFFF" fill-opacity="0.35"/>
+</svg>
