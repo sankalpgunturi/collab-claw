@@ -18,33 +18,37 @@
 
 ---
 
-**CollabClaw** lets a group of teammates collaborate inside a **single
-Claude Code session**. The host runs Claude as usual; teammates connect
-from their own laptops via a small CLI. Their prompts arrive as
-`[Alice]: ...` notifications and the host's Claude responds — once,
-for everyone.
+**CollabClaw** is screen-sharing for Claude Code. Three people, one
+Claude — everyone types from their own laptop, everyone sees the same
+conversation.
 
 ```mermaid
 flowchart LR
-    subgraph Host["🖥️ Alice (host)"]
-        C["<code>$ claude</code><br/>+ <strong>CollabClaw</strong> plugin"]
-        R["relay :7474<br/>+ monitor + hooks"]
-        C <--> R
-    end
-    subgraph Joiner["💻 Bob / Carol"]
-        T["<code>$ collab-claw join &lt;url&gt;</code><br/>TUI: transcript + prompt"]
-    end
-    Host -. "1. join URL (DM)" .-> Joiner
-    Joiner == "2. joiner prompts" ==> Host
-    Host == "3. host responses" ==> Joiner
-    classDef host fill:#fde9e2,stroke:#c44322,color:#1a1a1a;
-    classDef join fill:#e2eafd,stroke:#2a4dc4,color:#1a1a1a;
-    class Host host;
-    class Joiner join;
+    Alice(["👩 Alice"])
+    Bob(["👤 Bob"])
+    Carol(["👤 Carol"])
+    Claude{{"🤖 Claude<br/>(on Alice's laptop)"}}
+    Alice <==> Claude
+    Bob <-.-> Claude
+    Carol <-.-> Claude
+    classDef person fill:#e2eafd,stroke:#2a4dc4,color:#1a1a1a;
+    classDef ai fill:#fde9e2,stroke:#c44322,color:#1a1a1a,font-weight:bold;
+    class Alice,Bob,Carol person;
+    class Claude ai;
 ```
 
-Only the host needs Claude Code. Only the host pays for tokens.
-Local-first; cross-network is opt-in.
+Alice runs `claude` as usual. Bob and Carol run the `collab-claw` CLI
+on their own laptops. When Bob types a prompt, Alice's Claude sees it
+as `[Bob]: ...` and responds. Everyone sees every response, in real
+time, in their terminal.
+
+- 🦞 **One Claude.** Only Alice's machine runs Claude Code.
+- 💸 **One bill.** Joiners don't run Claude at all, so there are no
+  joiner tokens to burn.
+- 🏠 **Local-first.** The connection is over your LAN by default.
+  Cross-network is opt-in (`collab-claw expose`).
+- 🔐 **Approval-gated.** Joiners only get in when Alice says so;
+  kicks revoke access immediately.
 
 ## Quick start
 
