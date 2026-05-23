@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CollabClaw — logo concepts</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      color: #1a1a1a;
+      background: #fff;
+      line-height: 1.55;
+    }
+    h1 { letter-spacing: -0.02em; }
+    h2 { margin-top: 2.5rem; }
+    .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; }
+    .opt {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 1.25rem;
+      text-align: center;
+      background: #fafafa;
+    }
+    .opt h3 { margin: 0 0 0.6rem; font-size: 1rem; }
+    .opt p { margin: 0.6rem 0 0; color: #666; font-size: 0.85rem; text-align: left; }
+    .opt .stage {
+      background: white;
+      padding: 1rem;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 180px;
+    }
+    .opt .stage.dark { background: #14110f; }
+    .alt-libs {
+      background: #f4ece4;
+      padding: 1.5rem;
+      border-radius: 10px;
+      margin-top: 1.5rem;
+    }
+    .alt-libs ul { margin: 0.6rem 0; }
+    code {
+      background: #eee;
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+    note { display: block; margin: 1.5rem 0; padding: 1rem; background: #fff4d4; border-left: 4px solid #e8a700; border-radius: 4px; color: #5a4400; }
+  </style>
+</head>
+<body>
+
+<h1>CollabClaw — logo concepts</h1>
+
+<note>
+  <strong>Honest disclaimer:</strong> hand-writing organic-shape SVGs isn't
+  something I'm good at. The options below are my best attempts at the
+  "two claws meeting" composition you sketched. For a production-quality
+  logo I'd recommend either an open emoji set (see "Alternative sources"
+  at the bottom) or a real designer. Treat this page as a sketchpad —
+  screenshot whichever option you like, or copy the inline SVG source
+  into <code>docs/logo.svg</code> directly.
+</note>
+
+<h2>Option A — Two claws (geometric, current direction)</h2>
+<p style="color:#666">Two mirrored crab-claw silhouettes facing each other. Coral fill, dark outline, soft highlight. The most "matches the reference Shutterstock" attempt.</p>
+
+<div class="options">
+  <div class="opt">
+    <div class="stage">
+      <svg viewBox="0 0 400 200" width="360" xmlns="http://www.w3.org/2000/svg">
+        <g id="claw-a">
+          <ellipse cx="55" cy="160" rx="48" ry="6" fill="#7A1F0A" opacity="0.35"/>
+          <path d="M 60 80
+                   Q 30 78 22 100
+                   Q 18 130 50 142
+                   Q 80 150 110 142
+                   Q 145 132 165 110
+                   L 175 120
+                   L 130 122
+                   L 175 142
+                   L 130 138
+                   L 165 130
+                   Q 145 152 110 158
+                   Q 80 162 50 158
+                   Q 18 152 22 122
+                   Q 30 102 60 100
+                   Z"
+                fill="#E55934" stroke="#7A1F0A" stroke-width="3" stroke-linejoin="round"/>
+          <circle cx="50" cy="110" r="3" fill="#7A1F0A"/>
+          <circle cx="65" cy="115" r="2" fill="#7A1F0A"/>
+          <circle cx="80" cy="118" r="2" fill="#7A1F0A"/>
+          <ellipse cx="40" cy="100" rx="10" ry="5" fill="#FFFFFF" opacity="0.35"/>
+        </g>
+        <use href="#claw-a" transform="translate(400 0) scale(-1 1)"/>
+      </svg>
+    </div>
+    <h3 style="margin-top:0.6rem">A1 — Mirrored crab silhouette</h3>
+    <p>Most reference-faithful but the most code (and the most chances for it to look off). Editable: change <code>fill="#E55934"</code> for the colour.</p>
+  </div>
+
+  <div class="opt">
+    <div class="stage dark">
+      <svg viewBox="0 0 400 200" width="360" xmlns="http://www.w3.org/2000/svg">
+        <g id="claw-a-dark">
+          <ellipse cx="55" cy="160" rx="48" ry="6" fill="#000" opacity="0.4"/>
+          <path d="M 60 80
+                   Q 30 78 22 100
+                   Q 18 130 50 142
+                   Q 80 150 110 142
+                   Q 145 132 165 110
+                   L 175 120
+                   L 130 122
+                   L 175 142
+                   L 130 138
+                   L 165 130
+                   Q 145 152 110 158
+                   Q 80 162 50 158
+                   Q 18 152 22 122
+                   Q 30 102 60 100
+                   Z"
+                fill="#F26B5C" stroke="#FFD0C2" stroke-width="3" stroke-linejoin="round"/>
+          <circle cx="50" cy="110" r="3" fill="#FFD0C2"/>
+          <circle cx="65" cy="115" r="2" fill="#FFD0C2"/>
+          <circle cx="80" cy="118" r="2" fill="#FFD0C2"/>
+        </g>
+        <use href="#claw-a-dark" transform="translate(400 0) scale(-1 1)"/>
+      </svg>
+    </div>
+    <h3 style="margin-top:0.6rem">A1 — on dark</h3>
+    <p>Same shape, dark background, lighter outline. Useful to check contrast for the GitHub social card.</p>
+  </div>
+</div>
+
+<h2>Option B — Two abstract crescents</h2>
+<p style="color:#666">More iconographic, less literal. Two opposing C-shapes hinting at a pincer. Looks better at small sizes (favicon).</p>
+
+<div class="options">
+  <div class="opt">
+    <div class="stage">
+      <svg viewBox="0 0 320 200" width="280" xmlns="http://www.w3.org/2000/svg">
+        <g stroke="#7A1F0A" stroke-width="6" stroke-linecap="round" fill="#E55934">
+          <path d="M 40 100 Q 40 30 130 30 Q 130 80 100 100 Q 130 120 130 170 Q 40 170 40 100 Z"/>
+          <path d="M 280 100 Q 280 30 190 30 Q 190 80 220 100 Q 190 120 190 170 Q 280 170 280 100 Z"/>
+        </g>
+      </svg>
+    </div>
+    <h3 style="margin-top:0.6rem">B1 — Stylized "C"s</h3>
+    <p>Each side is a simple bow shape with a pincer-notch. Reads as "claws meeting" without literal anatomy. Scales well.</p>
+  </div>
+
+  <div class="opt">
+    <div class="stage">
+      <svg viewBox="0 0 320 200" width="280" xmlns="http://www.w3.org/2000/svg">
+        <g fill="#E55934">
+          <circle cx="100" cy="100" r="55"/>
+          <polygon points="100,100 175,75 175,125"/>
+        </g>
+        <g fill="#E55934">
+          <circle cx="220" cy="100" r="55"/>
+          <polygon points="220,100 145,75 145,125"/>
+        </g>
+      </svg>
+    </div>
+    <h3 style="margin-top:0.6rem">B2 — Pac-Man pair</h3>
+    <p>Dead simple: circle minus wedge, mirrored. Reads instantly. Probably too generic.</p>
+  </div>
+</div>
+
+<h2>Option C — Just the emoji</h2>
+<p style="color:#666">Skip the SVG entirely. <code>🦞</code> renders consistently on every modern OS, and is what many GitHub READMEs already do for branding.</p>
+
+<div class="options">
+  <div class="opt">
+    <div class="stage" style="font-size: 6rem;">🦞</div>
+    <h3 style="margin-top:0.6rem">C1 — Lobster emoji</h3>
+    <p>Use as inline character in the README H1: <code>&lt;h1&gt;CollabClaw 🦞&lt;/h1&gt;</code>. Pros: free, professional-looking, scales perfectly, zero maintenance. Cons: looks slightly different on macOS vs Windows vs Linux.</p>
+  </div>
+
+  <div class="opt">
+    <div class="stage" style="font-size: 5rem;">🦞 🤝 🦞</div>
+    <h3 style="margin-top:0.6rem">C2 — Two lobsters shaking</h3>
+    <p>Reinforces the "collaboration" theme. Probably too much for a header but cute for social cards.</p>
+  </div>
+</div>
+
+<h2 id="alt">Alternative sources (recommended)</h2>
+<div class="alt-libs">
+  <p style="margin-top:0">If you want something polished without hiring a designer, these emoji libraries ship as open-licensed SVGs and have professional lobster/crab claw graphics:</p>
+  <ul>
+    <li>
+      <strong><a href="https://openmoji.org/library/emoji-1F99E/">OpenMoji 🦞</a></strong> — CC-BY-SA 4.0.
+      Download the SVG and commit it as <code>docs/logo.svg</code>. Attribution: <code>"Logo: OpenMoji 1F99E (CC BY-SA 4.0)"</code> in the footer.
+    </li>
+    <li>
+      <strong><a href="https://github.com/googlefonts/noto-emoji">Noto Emoji</a></strong> — Apache 2.0.
+      Google's open emoji set. Lobster at <code>svg/emoji_u1f99e.svg</code>. Most permissive license.
+    </li>
+    <li>
+      <strong><a href="https://github.com/microsoft/fluentui-emoji">Fluent UI Emoji</a></strong> — MIT.
+      Microsoft's set; "Lobster" in 3D and flat. Visually closest to the Shutterstock reference you sent.
+    </li>
+  </ul>
+  <p>Any of these will look better than my hand-written attempts above and cost nothing.</p>
+</div>
+
+<h2>How to use what you pick</h2>
+<p>Whichever option you like:</p>
+<ol>
+  <li>Right-click the SVG → "View Source" (or copy the inline source from this file).</li>
+  <li>Replace the contents of <code>docs/logo.svg</code>.</li>
+  <li>The README and Pages site both reference <code>docs/logo.svg</code> — no other changes needed.</li>
+</ol>
+
+<p>Or, if you'd rather screenshot:</p>
+<ol>
+  <li>Open this page in a browser at full window size.</li>
+  <li>Zoom in (Cmd/Ctrl + several times) until the option you like fills the screen.</li>
+  <li>Screenshot just that option, save as PNG, then convert to SVG via <a href="https://vectorizer.ai/">vectorizer.ai</a> or similar.</li>
+</ol>
+
+</body>
+</html>
