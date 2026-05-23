@@ -11,6 +11,7 @@ to reach for it.
 | `/collab-claw:status` | Show current room state (members, latency). |
 | `/collab-claw:approve <id>` | Approve a pending join request. |
 | `/collab-claw:kick <name>` | Remove a member (also denies pending requests). |
+| `/collab-claw:expose` | Start a managed Cloudflare quick tunnel and print a public join URL. |
 | `/collab-claw:end` | Tear down the room. |
 
 When a teammate joins, you'll see:
@@ -45,8 +46,10 @@ If your teammates aren't on the same LAN as the host:
 collab-claw expose
 ```
 
-This wraps `cloudflared tunnel --url http://localhost:<port>`. You
-need `cloudflared` installed first:
+This starts a managed `cloudflared tunnel --url http://127.0.0.1:<port>`
+process in the background, stores the public URL in `session.json`, and
+prints a rewritten join URL with the same room secret. You need
+`cloudflared` installed first:
 
 ```bash
 brew install cloudflared    # macOS
@@ -54,10 +57,16 @@ brew install cloudflared    # macOS
 ```
 
 `expose` parses the public `https://<random>.trycloudflare.com` URL
-out of cloudflared's output and prints a rewritten join URL with the
-same room secret. DM that to teammates anywhere. Keep the terminal
-open — Ctrl-C tears the tunnel down. Your LAN URL still works for
+out of cloudflared's output. DM that to teammates anywhere. The tunnel
+keeps running in the background and is stopped automatically by
+`/collab-claw:end` or `collab-claw end`. Your LAN URL still works for
 local teammates in parallel.
+
+If you want the old foreground behavior for debugging, run:
+
+```bash
+collab-claw expose --foreground
+```
 
 If you'd rather use ngrok, tailscale, wireguard, or `ssh -R`, just
 expose the relay port however you like and DM the resulting URL

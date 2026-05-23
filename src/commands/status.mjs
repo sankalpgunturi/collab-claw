@@ -19,6 +19,14 @@ export async function run(args) {
 
   if (s.mode === 'host') {
     info(`${dim('joinUrl:')} ${cyan(s.joinUrl || `${s.relayUrl}#secret=${s.roomSecret}`)}`);
+    if (s.publicJoinUrl) {
+      info(`${dim('public:')}  ${cyan(s.publicJoinUrl)}`);
+      if (s.tunnelProvider || s.tunnelPid) {
+        const provider = s.tunnelProvider || 'tunnel';
+        const pid = s.tunnelPid ? ` pid=${s.tunnelPid}` : '';
+        info(`${dim('tunnel:')}  ${provider}${pid}`);
+      }
+    }
     try {
       const r = await fetch(`${s.relayUrl}/members`, {
         headers: { 'Authorization': `Bearer ${s.hostToken}` },

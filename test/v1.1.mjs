@@ -13,7 +13,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { setTimeout as wait } from 'node:timers/promises';
 
@@ -229,7 +229,7 @@ async function main() {
   mkdirSync(join(fakeHome, '.collab-claw'), { recursive: true });
   writeFileSync(join(fakeHome, '.collab-claw', 'session.json'), JSON.stringify({
     v: 1, mode: 'host', roomId: 'fake', roomSecret: 'sek', hostToken: 'tok',
-    relayUrl: 'http://127.0.0.1:7474', hostName: 'X', relayPid: 1,
+    relayUrl: 'http://127.0.0.1:7474', hostName: 'X', relayPid: null,
     joinUrl: 'http://127.0.0.1:7474#secret=sek',
     createdAt: '2026-01-01T00:00:00Z',
   }), { mode: 0o600 });
@@ -241,6 +241,60 @@ async function main() {
   });
   check('C expose w/ session but no cloudflared → exit 1 with install hint',
     exposeNoCfd.status === 1 && /cloudflared is not installed/.test(exposeNoCfd.stderr));
+
+  // Fake cloudflared: print a trycloudflare URL, then stay alive until
+  // `collab-claw end` kills the managed tunnel process group.
+  const managedHome = join(TMP, 'managed-home');
+  const fakeBin = join(TMP, 'fake-bin');
+  mkdirSync(join(managedHome, '.collab-claw'), { recursive: true });
+  mkdirSync(fakeBin, { recursive: true });
+  const fakeCloudflared = join(fakeBin, 'cloudflared');
+  writeFileSync(fakeCloudflared, [
+    '#!/usr/bin/env sh',
+    'echo "2026-01-01T00:00:00Z https://managed-test.trycloudflare.com" >&2',
+    'while true; do sleep 1; done',
+  ].join('\n') + '\n');
+  chmodSync(fakeCloudflared, 0o755);
+  writeFileSync(join(managedHome, '.collab-claw', 'session.json'), JSON.stringify({
+    v: 1, mode: 'host', roomId: 'managed', roomSecret: 'sek2', hostToken: 'tok2',
+    relayUrl: 'http://127.0.0.1:7475', hostName: 'Managed', relayPid: null,
+    joinUrl: 'http://127.0.0.1:7475#secret=sek2',
+    createdAt: '2026-01-01T00:00:00Z',
+  }), { mode: 0o600 });
+  const managedEnv = {
+    HOME: managedHome,
+    NO_COLOR: '1',
+    PATH: `${fakeBin}:${nodeDir}:/bin:/usr/bin`,
+    COLLAB_CLAW_TUNNEL_TIMEOUT_MS: '1000',
+  };
+  const exposeManaged = spawnSync(process.execPath, [CLI, 'expose'], {
+    env: managedEnv,
+    encoding: 'utf8',
+  });
+  const managedSessionPath = join(managedHome, '.collab-claw', 'session.json');
+  const managedSession = JSON.parse(readFileSync(managedSessionPath, 'utf8'));
+  check('C expose starts managed cloudflared tunnel and prints public join URL',
+    exposeManaged.status === 0 && /managed-test\.trycloudflare\.com#secret=sek2/.test(exposeManaged.stdout));
+  check('C expose persists public join URL and tunnel pid',
+    managedSession.publicJoinUrl === 'https://managed-test.trycloudflare.com#secret=sek2' &&
+    Number(managedSession.tunnelPid) > 0);
+  const managedStatus = spawnSync(process.execPath, [CLI, 'status'], {
+    env: managedEnv,
+    encoding: 'utf8',
+  });
+  check('C status shows public join URL',
+    managedStatus.status === 0 && /public:/.test(managedStatus.stdout) &&
+    /managed-test\.trycloudflare\.com#secret=sek2/.test(managedStatus.stdout));
+  const managedPid = managedSession.tunnelPid;
+  const managedEnd = spawnSync(process.execPath, [CLI, 'end'], {
+    env: managedEnv,
+    encoding: 'utf8',
+  });
+  await wait(200);
+  check('C end clears session and stops managed tunnel',
+    managedEnd.status === 0 &&
+    !existsSync(managedSessionPath) &&
+    !pidAlive(managedPid));
 
   // ----------------------------------------------------------------
   // D. Reconnection UX (TUI plain-mode is fine — we just want the
@@ -342,6 +396,15 @@ async function main() {
 
   console.log(`\n# ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
+}
+
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

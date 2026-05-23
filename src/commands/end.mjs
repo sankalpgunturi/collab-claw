@@ -1,7 +1,8 @@
 // end — tear down the hosted room.
 //
-// Sends POST /shutdown to the relay (clean exit) and deletes session.json.
-// Falls back to SIGTERM on the relay PID if HTTP shutdown fails.
+// Sends POST /shutdown to the relay (clean exit), kills any managed tunnel,
+// and deletes session.json. Falls back to SIGTERM on the relay PID if HTTP
+// shutdown fails.
 
 import { readSession, clearSession } from '../state.mjs';
 import { info, warn, error, dim } from '../util/log.mjs';
@@ -31,7 +32,17 @@ export async function run(args) {
     }
   }
 
+  if (s.tunnelPid) {
+    try {
+      process.kill(-s.tunnelPid, 'SIGTERM');
+    } catch {
+      try { process.kill(s.tunnelPid, 'SIGTERM'); }
+      catch (e) { warn(`SIGTERM to tunnel pid ${s.tunnelPid} failed: ${e.code || e.message}`); }
+    }
+  }
+
   clearSession();
-  info(dim(`room ended (relayPid=${s.relayPid || 'n/a'}).`));
+  const tunnel = s.tunnelPid ? `, tunnelPid=${s.tunnelPid}` : '';
+  info(dim(`room ended (relayPid=${s.relayPid || 'n/a'}${tunnel}).`));
   return 0;
 }

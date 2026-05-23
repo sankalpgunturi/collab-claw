@@ -23,11 +23,15 @@ Set on the host before `/collab-claw:host`:
 | `~/.collab-claw/config.json` | 0644 | Display name, default port. Survives across rooms. |
 | `~/.collab-claw/session.json` | 0600 | Active host or joiner state. Deleted on `end`/`leave`. |
 | `~/.collab-claw/log/<roomId>.jsonl` | 0600 | Persisted transcript (one event per line). |
+| `~/.collab-claw/cloudflared-<roomId>.log` | 0600 | Output from a managed `collab-claw expose` Cloudflare tunnel. |
 | `~/.claude/data/collab-claw/monitor.log` | 0644 | Monitor's debug log. |
 
 The host's `session.json` contains the host token; `mode 0600` is
-enforced on every write. Member tokens never land on disk anywhere
-(joiner `session.json` carries only the joiner's own member token).
+enforced on every write. If `collab-claw expose` is running in managed
+mode, host `session.json` also contains the public Cloudflare join URL
+and the `cloudflared` PID so `status` can display it and `end` can stop
+it. Member tokens never land on disk anywhere (joiner `session.json`
+carries only the joiner's own member token).
 
 ## What's in a persisted log line?
 

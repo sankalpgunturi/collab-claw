@@ -109,6 +109,7 @@ function printBanner(session) {
   info(`  ${dim('You can leave the host Claude session idle. Joiner prompts will arrive')}`);
   info(`  ${dim('as `[Name]: <text>` notifications and Claude will respond. End the room')}`);
   info(`  ${dim('with `/collab-claw:end` (or `collab-claw end` from any shell).')}`);
+  info(`  ${dim('If the LAN URL does not work, run `/collab-claw:expose` for a Cloudflare URL.')}`);
   info('');
 }
 

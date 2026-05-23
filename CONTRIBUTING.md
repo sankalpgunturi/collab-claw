@@ -9,7 +9,7 @@ docs fixes, and PRs are all welcome.
 git clone https://github.com/sankalpgunturi/collab-claw.git
 cd collab-claw
 npm install            # no runtime deps; this is currently a no-op
-npm test               # should pass 101/101 in ~30s
+npm test               # should pass 105/105 in ~30s
 ```
 
 There are zero runtime dependencies. The full test suite spawns the
