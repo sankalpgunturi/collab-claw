@@ -11,6 +11,7 @@
 //   E. Markdown renderer unit tests.
 
 import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
@@ -133,6 +134,46 @@ async function main() {
   const unterm = renderBlock('start:\n```\nline');
   check('E markdown: unterminated fence is auto-closed',
     unterm[unterm.length - 1].includes('unterminated'));
+
+  // ----------------------------------------------------------------
+  // G. Join approval wait survives transient Cloudflare HTML responses.
+  // ----------------------------------------------------------------
+  const { waitForApproval } = await import('../src/commands/join.mjs');
+  const waitServer = http.createServer((req, res) => {
+    if (req.url !== '/join-requests/retry-id/wait') {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
+      return;
+    }
+    waitServer.seen = (waitServer.seen || 0) + 1;
+    if (waitServer.seen === 1) {
+      res.writeHead(502, { 'Content-Type': 'text/html' });
+      res.end('<!DOCTYPE html><title>cloudflare transient</title>');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true,
+      approved: true,
+      roomId: 'retry-room',
+      memberToken: 'member-token',
+      memberId: 'member-id',
+      name: 'Retry',
+    }));
+  });
+  await new Promise(resolve => waitServer.listen(0, '127.0.0.1', resolve));
+  const retryUrl = `http://127.0.0.1:${waitServer.address().port}`;
+  try {
+    const approved = await waitForApproval(retryUrl, 'retry-id', {
+      totalMs: 2000,
+      requestMs: 500,
+      retryMs: 10,
+    });
+    check('G join wait retries transient Cloudflare HTML response',
+      approved.approved && approved.memberToken === 'member-token' && waitServer.seen === 2);
+  } finally {
+    await new Promise(resolve => waitServer.close(resolve));
+  }
 
   // ----------------------------------------------------------------
   // A. Persistence
@@ -265,7 +306,7 @@ async function main() {
     HOME: managedHome,
     NO_COLOR: '1',
     PATH: `${fakeBin}:${nodeDir}:/bin:/usr/bin`,
-    COLLAB_CLAW_TUNNEL_TIMEOUT_MS: '1000',
+    COLLAB_CLAW_TUNNEL_TIMEOUT_MS: '5000',
   };
   const exposeManaged = spawnSync(process.execPath, [CLI, 'expose'], {
     env: managedEnv,
