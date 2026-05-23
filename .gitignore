@@ -10,3 +10,6 @@ node_modules/
 .idea/
 .vscode/
 coverage/
+
+# Claude Code local session/worktree state
+.claude/
