@@ -28,6 +28,7 @@
 import readline from 'node:readline';
 import { clearSession } from '../state.mjs';
 import { dim, bold, green, cyan, red, yellow, magenta } from '../util/log.mjs';
+import { renderBlock } from '../util/markdown.mjs';
 
 const ESC = '\x1b[';
 
@@ -69,6 +70,14 @@ export async function startTui(session) {
   // Track members + latency for status bar
   let memberCount = 0;
   let lastLatencyMs = null;
+  // Connection state for the status bar.
+  //   'connected'    — SSE stream open
+  //   'reconnecting' — between attempts (short outage)
+  //   'offline'      — N+ failed attempts; host is probably down
+  let connState = 'reconnecting';
+  let lastConnectedAt = null;
+  let reconnectAttempts = 0;
+  const OFFLINE_THRESHOLD = 3;
   // Map: requestId-or-text-prefix → { sentAt } so we can compute round-trip
   // when our own prompt comes back as a response. We use the prompt text +
   // our member name to disambiguate.
@@ -115,11 +124,28 @@ export async function startTui(session) {
     saveCursor();
     moveTo(1, 1);
     clearLine();
-    const left  = ` ${bold('collab-claw')} ${dim('·')} room ${session.roomId} ${dim('·')} members: ${memberCount}`;
+    const conn = connStateLabel();
+    const left  = ` ${bold('collab-claw')} ${dim('·')} room ${session.roomId} ${dim('·')} ${conn} ${dim('·')} members: ${memberCount}`;
     const right = lastLatencyMs == null ? '' : `latency: ${lastLatencyMs}ms `;
     const pad = Math.max(1, W() - stripAnsi(left).length - right.length);
     process.stdout.write(inverse(left + ' '.repeat(pad) + right));
     restoreCursor();
+  }
+
+  function connStateLabel() {
+    if (connState === 'connected') return green('● live');
+    if (connState === 'reconnecting') return yellow('● reconnecting…');
+    const since = lastConnectedAt ? humanAgo(Date.now() - lastConnectedAt) : 'unknown';
+    return red(`● host offline (last seen ${since})`);
+  }
+
+  function humanAgo(ms) {
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    return `${h}h ago`;
   }
 
   function renderTranscriptLine(line) {
@@ -237,9 +263,27 @@ export async function startTui(session) {
     }
   }
 
-  // SSE consumer for /transcript-stream
+  // SSE consumer for /transcript-stream — reconnects forever with backoff,
+  // updating the status bar so the user knows when the host is offline.
   let streamCtrl = new AbortController();
   let streamReader = null;
+  function setConn(next) {
+    if (connState === next) return;
+    const prev = connState;
+    connState = next;
+    if (next === 'connected') {
+      lastConnectedAt = Date.now();
+      reconnectAttempts = 0;
+      if (prev === 'offline') {
+        renderTranscriptLine(green('● reconnected to host'));
+      }
+    }
+    renderStatus();
+  }
+  function backoffMs() {
+    // 1s, 2s, 4s, 8s, capped at 10s
+    return Math.min(10000, 1000 * Math.pow(2, Math.max(0, reconnectAttempts - 1)));
+  }
   async function consumeStream() {
     while (!streamCtrl.signal.aborted) {
       try {
@@ -258,10 +302,9 @@ export async function startTui(session) {
           return;
         }
         if (!r.ok || !r.body) {
-          renderTranscriptLine(red(`! transcript SSE bad status: ${r.status}`));
-          await new Promise(rr => setTimeout(rr, 1000));
-          continue;
+          throw new Error(`bad SSE status ${r.status}`);
         }
+        setConn('connected');
         const reader = r.body.getReader();
         streamReader = reader;
         const dec = new TextDecoder('utf-8');
@@ -281,14 +324,28 @@ export async function startTui(session) {
             } catch {}
           }
         }
+        // Stream closed by server — most likely host restart or relay
+        // restart. Treat as a transient reconnect, not a hard error.
+        reconnectAttempts++;
+        setConn(reconnectAttempts >= OFFLINE_THRESHOLD ? 'offline' : 'reconnecting');
       } catch (e) {
         if (streamCtrl.signal.aborted) return;
-        renderTranscriptLine(red(`! transcript SSE error: ${e.message}`));
-        await new Promise(rr => setTimeout(rr, 1000));
+        reconnectAttempts++;
+        // Only surface an inline error line once per outage, to avoid
+        // spamming the transcript every retry.
+        if (reconnectAttempts === 1) {
+          renderTranscriptLine(yellow('⚠ connection to host lost; will keep retrying'));
+        }
+        setConn(reconnectAttempts >= OFFLINE_THRESHOLD ? 'offline' : 'reconnecting');
+        await new Promise(rr => setTimeout(rr, backoffMs()));
       }
     }
   }
   consumeStream();
+  // Refresh the "last seen" age every 10s so the offline label doesn't go stale.
+  const offlineTickTimer = setInterval(() => {
+    if (connState === 'offline') renderStatus();
+  }, 10_000);
 
   function renderEvent(ev) {
     const kind = ev.kind;
@@ -297,7 +354,11 @@ export async function startTui(session) {
     if (!text && kind !== 'system') return;
 
     if (kind === 'prompt') {
-      renderTranscriptLine(`${bold(magenta(`[${name}]`))} ${text}`);
+      // Prompts are short-form; only inline markdown matters for code refs.
+      const lines = tty ? renderBlock(text) : [text];
+      const head = `${bold(magenta(`[${name}]`))} ${lines[0] || ''}`;
+      renderTranscriptLine(head);
+      for (let i = 1; i < lines.length; i++) renderTranscriptLine(lines[i]);
       return;
     }
     if (kind === 'response') {
@@ -310,7 +371,10 @@ export async function startTui(session) {
         lat = ` ${dim(`(round-trip: ${ms}ms)`)}`;
         renderStatus();
       }
-      renderTranscriptLine(`${bold(cyan(`[${name}]`))} ${text}${lat}`);
+      const lines = tty ? renderBlock(text) : [text];
+      const head = `${bold(cyan(`[${name}]`))} ${lines[0] || ''}${lat}`;
+      renderTranscriptLine(head);
+      for (let i = 1; i < lines.length; i++) renderTranscriptLine(lines[i]);
       return;
     }
     if (kind === 'tool_pre') {
@@ -337,6 +401,7 @@ export async function startTui(session) {
     try { streamCtrl.abort(); } catch {}
     try { streamReader && streamReader.cancel && streamReader.cancel(); } catch {}
     clearInterval(memberTimer);
+    clearInterval(offlineTickTimer);
     try {
       await fetch(`${session.relayUrl}/leaves`, {
         method : 'POST',
