@@ -20,7 +20,7 @@ class CollabClaw < Formula
   desc "Pair-program with one Claude across multiple laptops"
   homepage "https://github.com/sankalpgunturi/collab-claw"
   url "https://github.com/sankalpgunturi/collab-claw/archive/refs/tags/v0.2.2.tar.gz"
-  sha256 "SHA256_PLACEHOLDER"
+  sha256 "6986e65c960be7bf31422283a5193d96c3c3669bfa01ab22e175a9431004bf23"
   license "MIT"
 
   depends_on "node"
