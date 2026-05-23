@@ -1,6 +1,6 @@
 # Security policy
 
-`collab-claw` brokers prompts and responses between humans and a
+**CollabClaw** brokers prompts and responses between humans and a
 running Claude Code session. Treat security reports seriously — the
 host's machine is implicitly trusted by everyone in the room.
 
@@ -53,7 +53,7 @@ stay anonymous) once a patched release is out.
 
 **Out of scope**
 
-- The host's Claude Code session is fully trusted — collab-claw doesn't
+- The host's Claude Code session is fully trusted — CollabClaw doesn't
   sandbox what Claude can do on the host's machine. Joiner prompts get
   delivered to the host's Claude as user requests; Claude's reaction
   to those prompts is governed by the same Claude Code permission
@@ -62,7 +62,8 @@ stay anonymous) once a patched release is out.
 - Network-layer adversaries on the LAN can already read unencrypted
   HTTP between the host and joiners; if you don't trust the network,
   use `collab-claw expose` (Cloudflare quick tunnel terminates TLS) or
-  front the relay with your own TLS-terminating tunnel.
+  front the relay with your own TLS-terminating tunnel. End-to-end
+  encryption of payloads is on the roadmap.
 - DoS resistance on the relay is best-effort. The relay enforces body
   size limits and a bounded prompt queue, but isn't designed to
   withstand sustained attack from a hostile joiner — the host can
