@@ -1,0 +1,15 @@
+# collab-claw CODEOWNERS
+#
+# These owners are automatically requested for review on any PR that
+# touches matching paths. See:
+#   https://docs.github.com/en/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default — everything not otherwise matched
+*                                @sankalpgunturi
+
+# Safety-critical surfaces
+/src/relay/                      @sankalpgunturi
+/src/commands/monitor.mjs        @sankalpgunturi
+/plugin/                         @sankalpgunturi
+/SECURITY.md                     @sankalpgunturi
+/.github/                        @sankalpgunturi
